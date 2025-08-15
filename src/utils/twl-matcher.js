@@ -282,14 +282,14 @@ function findMatches(verseText, termTrie) {
 }
 
 /**
- * Generate a 4-character hex ID starting with a letter
+ * Generate a 4-character ID starting with a letter
  */
 function generateId() {
-  const letters = 'abcdef';
-  const hex = '0123456789abcdef';
+  const letters = 'abcdefghijklmnopqrstuvwxyz';
+  const lettersAndDigits = 'abcdefghijklmnopqrstuvwxyz0123456789';
   let id = letters[Math.floor(Math.random() * letters.length)];
   for (let i = 0; i < 3; i++) {
-    id += hex[Math.floor(Math.random() * hex.length)];
+    id += lettersAndDigits[Math.floor(Math.random() * lettersAndDigits.length)];
   }
   return id;
 }
