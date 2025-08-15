@@ -4,16 +4,20 @@
 function generateVariants(term) {
   const variants = new Set([term]);
 
-  // Handle pluralization
-  if (term.endsWith('s') && term.length > 2) {
-    variants.add(term.slice(0, -1)); // dogs -> dog
+  // Handle pluralization - simple 's' removal (but not for words ending in 'ss')
+  if (term.endsWith('s') && term.length > 2 && !term.endsWith('ss') && !term.endsWith('es')) {
+    variants.add(term.slice(0, -1)); // dogs -> dog (but not does -> doe)
   } else {
     variants.add(term + 's'); // dog -> dogs
   }
 
-  // Handle 'es' endings
-  if (term.endsWith('es') && term.length > 3) {
-    variants.add(term.slice(0, -2)); // horses -> horse
+  // Handle 'es' endings - but only for legitimate plural patterns
+  if (term.endsWith('es') && term.length > 4) {
+    const base = term.slice(0, -2);
+    // Only if the base word would naturally take 'es' plural
+    if (/[sxz]$|[cs]h$/.test(base)) {
+      variants.add(base); // horses -> horse, churches -> church
+    }
   } else if (term.endsWith('e')) {
     variants.add(term + 's'); // horse -> horses
   } else if (/[sxz]$|[cs]h$/.test(term)) {
@@ -34,12 +38,21 @@ function generateVariants(term) {
     variants.add(term + "'");
   }
 
-  // Handle -ed/-ing forms (basic)
-  if (term.endsWith('ed') && term.length > 3) {
-    variants.add(term.slice(0, -2)); // walked -> walk
+  // Handle -ed forms - but only for legitimate verb patterns
+  if (term.endsWith('ed') && term.length > 4) {
+    const base = term.slice(0, -2);
+    // Only create base form if it looks like a legitimate verb stem
+    if (base.length > 2) {
+      variants.add(base); // walked -> walk
+    }
   }
-  if (term.endsWith('ing') && term.length > 4) {
-    variants.add(term.slice(0, -3)); // walking -> walk
+
+  // Handle -ing forms
+  if (term.endsWith('ing') && term.length > 5) {
+    const base = term.slice(0, -3);
+    if (base.length > 2) {
+      variants.add(base); // walking -> walk
+    }
   }
 
   // Double consonant handling for -ed/-ing
@@ -48,7 +61,7 @@ function generateVariants(term) {
     variants.add(term + term.slice(-1) + 'ing'); // stop -> stopping
   }
 
-  // Regular -ed/-ing
+  // Regular -ed/-ing addition
   if (!term.endsWith('e')) {
     variants.add(term + 'ed');
     variants.add(term + 'ing');
@@ -134,12 +147,18 @@ class PrefixTrie {
         const matchLength = currentPos - startPos;
         const originalMatchedText = text.substring(startPos, currentPos);
 
-        // Check if this is a valid word boundary match
-        const isWordBoundary = currentPos >= text.length ||
+        // Check if this is a valid word boundary match (both start and end)
+        const isStartBoundary = startPos === 0 ||
+          /[\s\p{P}]/.test(text[startPos - 1]) ||
+          !/[\w]/.test(text[startPos - 1]);
+
+        const isEndBoundary = currentPos >= text.length ||
           /[\s\p{P}]/.test(text[currentPos]) ||
           !/[\w]/.test(text[currentPos]);
 
-        if (isWordBoundary || matchLength === 1) {
+        const isWordBoundary = isStartBoundary && isEndBoundary;
+
+        if (isWordBoundary) {
           for (const termData of node._terms) {
             matches.push({
               term: termData.term,
