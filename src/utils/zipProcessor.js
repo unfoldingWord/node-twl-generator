@@ -6,7 +6,7 @@
  * 
  * Usage in React.js:
  *   import { generateTWTerms } from './utils/zipProcessor.js';
- *   const terms = await generateTWTerms('JHN');
+ *   const terms = await generateTWTerms();
  */
 
 import AdmZip from 'adm-zip';
@@ -164,9 +164,7 @@ async function cacheTerms(termMap) {
   }
 }
 
-export async function generateTWTerms(book) {
-  if (!BibleBookData[book]) throw new Error(`Unknown book: ${book}`);
-
+export async function generateTWTerms() {
   // Try to get cached terms first
   const cachedTerms = await getCachedTerms();
   if (cachedTerms) {

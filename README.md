@@ -35,12 +35,12 @@ function MyTWLComponent() {
   const [terms, setTerms] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  const loadTerms = async (book) => {
+  const loadTerms = async () => {
     setLoading(true);
     try {
       // First load: Downloads and processes (~3-4 seconds)
       // Subsequent loads: Uses browser cache (~instant)
-      const termData = await generateTWTerms(book);
+      const termData = await generateTWTerms();
       setTerms(termData);
 
       // Debug cache info
@@ -59,8 +59,7 @@ function MyTWLComponent() {
   return (
     <div>
       {loading && <p>Loading translation words...</p>}
-      <button onClick={() => loadTerms('JHN')}>Load John</button>
-      <button onClick={() => loadTerms('RUT')}>Load Ruth</button>
+      <button onClick={() => loadTerms()}>Load Terms</button>
       <button onClick={handleClearCache}>Clear Cache</button>
       {terms && <p>Loaded {Object.keys(terms).length} terms</p>}
     </div>
@@ -71,9 +70,9 @@ function MyTWLComponent() {
 ### Node.js Module
 
 ```js
-import { generateTWL } from 'twl-generator';
+import { generateTWLWithUsfm } from 'twl-generator';
 
-const result = await generateTWL('RUT');
+const result = await generateTWLWithUsfm('RUT');
 console.log(result);
 ```
 
@@ -94,11 +93,10 @@ The package uses a multi-tier caching approach for optimal performance in React.
 
 ## API Reference
 
-### `generateTWTerms(book)`
+### `generateTWTerms()`
 
-Generate terms for a Bible book with caching.
+Generate terms mapping with caching.
 
-- **book**: Bible book code (e.g., 'JHN', 'RUT', 'GEN')
 - **Returns**: Promise<Object> - Term mapping object
 
 ### `clearCache()`

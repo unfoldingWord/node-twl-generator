@@ -13,7 +13,7 @@ export { generateTWTerms, processUsfmForBook };
  */
 export async function generateTWLWithUsfm(book, usfmContent = null) {
   // Generate TW terms (with caching)
-  const terms = await generateTWTerms(book || 'gen'); // Use 'gen' as fallback for terms generation
+  const terms = await generateTWTerms();
 
   let verses;
   if (usfmContent) {
