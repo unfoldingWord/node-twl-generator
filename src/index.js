@@ -1,6 +1,6 @@
 // Main module for twl-generator
 import { generateTWTerms } from './utils/zipProcessor.js';
-import { processUsfmForBook, parseUsfmToVerses } from './utils/usfm-alignment-remover.js';
+import { processUsfmForBook, parseUsfmToVerses, removeAllTagsExceptChapterVerse } from './utils/usfm-alignment-remover.js';
 import { generateTWLMatches } from './utils/twl-matcher.js';
 
 export { generateTWTerms, processUsfmForBook };
@@ -17,8 +17,9 @@ export async function generateTWLWithUsfm(book, usfmContent = null) {
 
   let verses;
   if (usfmContent) {
-    // Parse provided USFM content
-    verses = parseUsfmToVerses(usfmContent);
+    // Parse provided USFM content (clean it first)
+    const cleanUsfm = removeAllTagsExceptChapterVerse(usfmContent);
+    verses = parseUsfmToVerses(cleanUsfm);
   } else {
     // Fetch USFM from git.door43.org
     if (!book) throw new Error('Book parameter required when no USFM content provided');

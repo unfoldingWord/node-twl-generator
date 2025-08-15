@@ -1,15 +1,13 @@
 /**
  * Universal TWL zipProcessor - Works in both Node.js and Browser environments
  * 
- * For Node.js (CLI): Uses file system caching with article_terms.json
- * For React.js/Browser: Uses localStorage/sessionStorage for persistent caching
+ * Caches the raw ZIP file and processes term headers on-demand
  * 
  * Usage in React.js:
  *   import { generateTWTerms } from './utils/zipProcessor.js';
  *   const terms = await generateTWTerms();
  */
 
-import AdmZip from 'adm-zip';
 import { BibleBookData } from '../common/books.js';
 
 // Environment detection
@@ -17,35 +15,75 @@ const isNode = typeof process !== 'undefined' && process.versions?.node;
 const isBrowser = typeof window !== 'undefined';
 
 const ZIP_URL = 'https://git.door43.org/unfoldingWord/en_tw/archive/master.zip';
-const CACHE_KEY = 'twl_article_terms';
+const CACHE_KEY = 'twl_zip_cache';
 const CACHE_VERSION = '1.0';
 
-// In-memory cache for current session
-let memoryCache = null;
+// In-memory cache for processed terms (per session)
+let processedTermsCache = null;
 
 /**
- * Get Node.js dependencies dynamically
+ * Get dependencies dynamically (JSZip works in both environments)
  */
-async function getNodeDeps() {
-  if (!isNode) return null;
-
+async function getDeps() {
   try {
-    const [nodeModule, fsModule, pathModule, urlModule] = await Promise.all([
-      import('node-fetch'),
-      import('fs'),
-      import('path'),
-      import('url')
-    ]);
-
-    return {
-      fetch: nodeModule.default,
-      fs: fsModule.default,
-      path: pathModule.default,
-      fileURLToPath: urlModule.fileURLToPath
+    const jsZipModule = await import('jszip');
+    const deps = {
+      JSZip: jsZipModule.default
     };
+
+    // Add Node.js-specific fetch if needed
+    if (isNode) {
+      const nodeModule = await import('node-fetch');
+      deps.fetch = nodeModule.default;
+    }
+
+    return deps;
   } catch (error) {
-    console.error('Failed to load Node.js dependencies:', error);
+    console.error('Failed to load dependencies:', error);
     return null;
+  }
+}
+
+async function getCachedZip() {
+  if (isBrowser) {
+    // Browser: Use localStorage for ZIP cache
+    try {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const data = JSON.parse(cached);
+        if (data.version === CACHE_VERSION) {
+          console.log('Using cached ZIP from browser storage');
+          return new Uint8Array(data.zipData);
+        } else {
+          localStorage.removeItem(CACHE_KEY);
+        }
+      }
+    } catch (error) {
+      console.log('Browser ZIP cache corrupted, re-downloading...');
+      try { localStorage.removeItem(CACHE_KEY); } catch (e) { }
+    }
+  }
+  // Note: In Node.js we could cache to filesystem, but fresh download is fine for CLI usage
+
+  return null;
+}
+
+/**
+ * Cache ZIP data in appropriate storage  
+ */
+async function cacheZip(zipBuffer) {
+  if (isBrowser) {
+    try {
+      const cacheData = {
+        version: CACHE_VERSION,
+        timestamp: Date.now(),
+        zipData: Array.from(new Uint8Array(zipBuffer))
+      };
+      localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
+      console.log('ZIP cached in browser storage');
+    } catch (error) {
+      console.warn('Failed to cache ZIP in browser:', error.message);
+    }
   }
 }
 
@@ -164,114 +202,117 @@ async function cacheTerms(termMap) {
   }
 }
 
-export async function generateTWTerms() {
-  // Try to get cached terms first
-  const cachedTerms = await getCachedTerms();
-  if (cachedTerms) {
-    return cachedTerms;
+/**
+ * Process ZIP buffer and extract term mappings
+ */
+async function processZipBuffer(zipBuffer) {
+  // Use JSZip universally for both Node.js and Browser
+  const deps = await getDeps();
+  if (!deps) throw new Error('Failed to load dependencies');
+  const { JSZip } = deps;
+
+  const zip = new JSZip();
+  const zipData = await zip.loadAsync(zipBuffer);
+
+  const entries = [];
+  zipData.forEach((relativePath, file) => {
+    if (relativePath.match(/^en_tw\/bible\/.*\/.*\.md$/) && !file.dir) {
+      entries.push({
+        entryName: relativePath,
+        getData: () => file.async('string') // Return promise for string content
+      });
+    }
+  });
+
+  entries.sort((a, b) => a.entryName.localeCompare(b.entryName));
+
+  const termMap = {};
+
+  for (const entry of entries) {
+    const content = await entry.getData(); // Await the async string content
+    const firstLine = content.split('\n')[0];
+    const terms = firstLine.replace(/^#/, '').trim().split(',').map(t => t.trim()).filter(Boolean);
+    const truncated = entry.entryName.replace('en_tw/bible/', '');
+
+    for (const term of terms) {
+      // Normalize terms by removing parentheses and spaces before them
+      // e.g., "Joseph (OT)" -> "Joseph", "Mary (sister of Martha)" -> "Mary"
+      const normalizedTerm = term.replace(/\s+\([^)]*\)$/, '').trim();
+
+      if (!termMap[normalizedTerm]) {
+        termMap[normalizedTerm] = [];
+      }
+      termMap[normalizedTerm].push(truncated);
+    }
   }
 
-  console.log('Downloading TW archive...');
+  // Sort article arrays for consistent output
+  for (const term in termMap) {
+    termMap[term].sort();
+  }
 
-  try {
-    // Get appropriate fetch function
+  return termMap;
+}
+
+export async function generateTWTerms() {
+  // Check if we already processed terms this session
+  if (processedTermsCache) {
+    console.log('Using in-memory processed terms');
+    return processedTermsCache;
+  }
+
+  // Try to get cached ZIP first
+  let zipBuffer = await getCachedZip();
+
+  if (!zipBuffer) {
+    // Download fresh ZIP
+    console.log('Downloading TW archive...');
+
     let fetchFn;
     if (isBrowser) {
       fetchFn = window.fetch;
-    } else if (isNode) {
-      const deps = await getNodeDeps();
+    } else {
+      const deps = await getDeps();
       fetchFn = deps?.fetch;
-      if (!fetchFn) throw new Error('Failed to load Node.js dependencies');
     }
+
+    if (!fetchFn) throw new Error('Fetch not available');
 
     const res = await fetchFn(ZIP_URL);
-    if (!res.ok) throw new Error(`Failed to download zip: ${res.status} ${res.statusText}`);
+    if (!res.ok) throw new Error(`Failed to download ZIP: ${res.status} ${res.statusText}`);
 
-    const buffer = await res.arrayBuffer();
-    const zip = new AdmZip(Buffer.from(buffer));
+    zipBuffer = await res.arrayBuffer();
 
-    console.log('Processing TW articles...');
-
-    const entries = zip.getEntries().filter(e => e.entryName.match(/^en_tw\/bible\/.*\/.*\.md$/));
-    entries.sort((a, b) => a.entryName.localeCompare(b.entryName));
-
-    const termMap = {};
-
-    for (const entry of entries) {
-      const content = entry.getData().toString('utf8');
-      const firstLine = content.split('\n')[0];
-      const terms = firstLine.replace(/^#/, '').trim().split(',').map(t => t.trim()).filter(Boolean);
-      const truncated = entry.entryName.replace('en_tw/bible/', '');
-
-      for (const term of terms) {
-        // Normalize terms by removing parentheses and spaces before them
-        // e.g., "Joseph (OT)" -> "Joseph", "Mary (sister of Martha)" -> "Mary"
-        const normalizedTerm = term.replace(/\s+\([^)]*\)$/, '').trim();
-
-        if (!termMap[normalizedTerm]) {
-          termMap[normalizedTerm] = [];
-        }
-        termMap[normalizedTerm].push(truncated);
-      }
-    }
-
-    // Sort article arrays for consistent output
-    for (const term in termMap) {
-      termMap[term].sort();
-    }
-
-    console.log(`Generated ${Object.keys(termMap).length} terms from TW archive`);
-
-    // Cache the results
-    await cacheTerms(termMap);
-
-    return termMap;
-
-  } catch (error) {
-    console.error('Error generating TW terms:', error);
-    throw error;
+    // Cache the ZIP for next time
+    await cacheZip(zipBuffer);
   }
+
+  // Process ZIP to extract terms
+  console.log('Processing TW articles...');
+  const termMap = await processZipBuffer(zipBuffer);
+
+  console.log(`Generated ${Object.keys(termMap).length} terms from TW archive`);
+
+  // Cache processed terms for this session
+  processedTermsCache = termMap;
+
+  return termMap;
 }
 
 /**
- * Clear cache - useful for forcing refresh in React.js apps
- * @returns {Promise<boolean>} - true if cache was cleared successfully
+ * Clear cache - useful for forcing refresh
  */
 export async function clearCache() {
   // Clear in-memory cache
-  memoryCache = null;
+  processedTermsCache = null;
 
   if (isBrowser) {
-    // Clear browser storage
-    const storage = getBrowserStorage();
-    if (storage) {
-      try {
-        storage.removeItem(CACHE_KEY);
-        console.log('Browser cache cleared');
-        return true;
-      } catch (error) {
-        console.warn('Failed to clear browser cache:', error.message);
-        return false;
-      }
-    }
-  } else if (isNode) {
-    // Clear Node.js file cache
     try {
-      const deps = await getNodeDeps();
-      if (deps) {
-        const { fs, path, fileURLToPath } = deps;
-        const __filename = fileURLToPath(import.meta.url);
-        const __dirname = path.dirname(__filename);
-        const CACHE_FILE = path.join(__dirname, '../../article_terms.json');
-
-        if (fs.existsSync(CACHE_FILE)) {
-          fs.unlinkSync(CACHE_FILE);
-          console.log('File cache cleared');
-          return true;
-        }
-      }
+      localStorage.removeItem(CACHE_KEY);
+      console.log('Browser ZIP cache cleared');
+      return true;
     } catch (error) {
-      console.warn('Failed to clear file cache:', error.message);
+      console.warn('Failed to clear browser cache:', error.message);
       return false;
     }
   }
@@ -281,45 +322,33 @@ export async function clearCache() {
 }
 
 /**
- * Get cache information for debugging - useful in React.js development
- * @returns {Object} - cache status and info
+ * Get cache information for debugging
  */
 export function getCacheInfo() {
   const info = {
     environment: isNode ? 'Node.js' : (isBrowser ? 'Browser' : 'Unknown'),
-    hasMemoryCache: !!memoryCache,
-    hasPersistentCache: false,
-    cacheType: null,
-    version: null,
-    timestamp: null,
-    termCount: 0
+    hasProcessedTerms: !!processedTermsCache,
+    hasZipCache: false,
+    termCount: 0,
+    cacheVersion: CACHE_VERSION
   };
 
-  // Memory cache info
-  if (memoryCache) {
-    info.termCount = Object.keys(memoryCache).length;
+  // Check processed terms
+  if (processedTermsCache) {
+    info.termCount = Object.keys(processedTermsCache).length;
   }
 
+  // Check ZIP cache in browser
   if (isBrowser) {
-    // Browser cache info
-    const storage = getBrowserStorage();
-    if (storage) {
-      try {
-        const cached = storage.getItem(CACHE_KEY);
-        if (cached) {
-          const data = JSON.parse(cached);
-          info.hasPersistentCache = true;
-          info.cacheType = storage === localStorage ? 'localStorage' : 'sessionStorage';
-          info.version = data.version;
-          info.timestamp = data.timestamp ? new Date(data.timestamp) : null;
-
-          if (!info.termCount && data.terms) {
-            info.termCount = Object.keys(data.terms).length;
-          }
-        }
-      } catch (error) {
-        // Ignore parse errors
+    try {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const data = JSON.parse(cached);
+        info.hasZipCache = true;
+        info.timestamp = data.timestamp ? new Date(data.timestamp) : null;
       }
+    } catch (error) {
+      // Ignore parse errors
     }
   }
 

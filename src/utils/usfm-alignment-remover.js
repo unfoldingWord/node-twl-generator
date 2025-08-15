@@ -1,7 +1,27 @@
 /* eslint-disable no-async-promise-executor, no-throw-literal */
 
-import fetch from 'node-fetch';
 import { BibleBookData } from '../common/books.js';
+
+// Environment detection
+const isNode = typeof window === 'undefined' && typeof process !== 'undefined' && process.versions?.node;
+
+// Get appropriate fetch implementation
+async function getFetch() {
+  if (isNode) {
+    const nodeFetch = await import('node-fetch');
+    return nodeFetch.default;
+  }
+  return globalThis.fetch;
+}
+
+// Get appropriate base64 decoder
+function decodeBase64(base64String) {
+  if (isNode) {
+    return Buffer.from(base64String, 'base64').toString('utf-8');
+  }
+  // Browser implementation
+  return atob(base64String);
+}
 
 // Note: This version doesn't use usfm-js to avoid external dependencies
 // It implements a simple USFM alignment remover for the specific case
@@ -53,11 +73,12 @@ export const removeAllTagsExceptChapterVerse = (usfmContent) => {
 export async function processUsfmForBook(book) {
   if (!BibleBookData[book]) throw new Error(`Unknown book: ${book}`);
 
+  const fetch = await getFetch();
   const usfmUrl = `https://git.door43.org/api/v1/repos/unfoldingWord/en_ult/contents/${BibleBookData[book].usfm}.usfm?ref=master`;
   const usfmRes = await fetch(usfmUrl);
   if (!usfmRes.ok) throw new Error(`Failed to download USFM file for ${book}`);
   const usfmData = await usfmRes.json();
-  const usfmContent = Buffer.from(usfmData.content, 'base64').toString('utf-8');
+  const usfmContent = decodeBase64(usfmData.content);
 
   // Remove alignments from USFM
   const cleanUsfm = removeAllTagsExceptChapterVerse(usfmContent);
