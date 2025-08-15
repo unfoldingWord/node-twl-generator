@@ -1,0 +1,31 @@
+# Test files
+test_*
+comprehensive_test*
+sample*
+*test*.tsv
+*test*.usfm
+*.log
+
+# Development files
+.git
+.gitignore
+.DS_Store
+*.tmp
+*.bak
+src/utils/twl-matcher-broken.js
+src/utils/twl-matcher-clean.js
+
+# Node modules (shouldn't be included anyway)
+node_modules/
+
+# Cache files
+article_terms.json
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Backup files
+src/utils/twl-matcher-*.js

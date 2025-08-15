@@ -1,0 +1,60 @@
+{
+  "name": "twl-generator",
+  "version": "1.0.0",
+  "description": "Generate term-to-article lists from unfoldingWord en_tw archive for Bible books. Works in both Node.js (CLI) and React.js (browser) environments.",
+  "main": "src/index.js",
+  "bin": {
+    "twl-generator": "src/cli.js"
+  },
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "cli": "node src/cli.js",
+    "test": "node src/cli.js --book RUT --output test-output.tsv"
+  },
+  "keywords": [
+    "bible",
+    "twl",
+    "generator",
+    "cli",
+    "react",
+    "browser",
+    "unfoldingword",
+    "translation-words"
+  ],
+  "author": "Rich Mahn <richmahn@example.com>",
+  "license": "MIT",
+  "homepage": "https://github.com/yourusername/twl-generator#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourusername/twl-generator.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/twl-generator/issues"
+  },
+  "files": [
+    "src/cli.js",
+    "src/index.js",
+    "src/common/",
+    "src/utils/twl-matcher.js",
+    "src/utils/zipProcessor.js",
+    "src/utils/usfm-alignment-remover.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.10",
+    "node-fetch": "^3.3.2"
+  },
+  "peerDependencies": {
+    "react": ">=16.8.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  }
+}
