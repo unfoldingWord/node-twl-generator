@@ -114,9 +114,6 @@ comprehensive_test*
 sample*.tsv
 sample*.usfm
 
-# Cache files
-article_terms.json
-
 # Log files
 *.log
 

@@ -116,24 +116,24 @@ class PrefixTrie {
 
   findMatches(text, startPos) {
     // First try exact case matches
-    let matches = this._findMatchesInTree(this.exactCaseRoot, text, startPos, true);
+    let matches = this._findMatchesInTree(this.exactCaseRoot, text, startPos, true, text);
 
     // If no exact case matches, try case-insensitive
     if (matches.length === 0) {
-      matches = this._findMatchesInTree(this.lowerCaseRoot, text.toLowerCase(), startPos, false);
+      matches = this._findMatchesInTree(this.lowerCaseRoot, text.toLowerCase(), startPos, false, text);
     }
 
     return matches;
   }
 
-  _findMatchesInTree(root, text, startPos, isExactCase) {
+  _findMatchesInTree(root, searchText, startPos, isExactCase, originalText) {
     const matches = [];
     let node = root;
     let currentPos = startPos;
 
     // Try to match as long as possible
-    while (currentPos < text.length) {
-      const char = text[currentPos];
+    while (currentPos < searchText.length) {
+      const char = searchText[currentPos];
 
       if (!node[char]) {
         break; // No more matches possible
@@ -145,16 +145,17 @@ class PrefixTrie {
       // If we found terms at this position, collect them
       if (node._terms) {
         const matchLength = currentPos - startPos;
-        const originalMatchedText = text.substring(startPos, currentPos);
+        // Always extract from the original text to preserve case
+        const originalMatchedText = originalText.substring(startPos, currentPos);
 
         // Check if this is a valid word boundary match (both start and end)
         const isStartBoundary = startPos === 0 ||
-          /[\s\p{P}]/.test(text[startPos - 1]) ||
-          !/[\w]/.test(text[startPos - 1]);
+          /[\s\p{P}]/.test(originalText[startPos - 1]) ||
+          !/[\w]/.test(originalText[startPos - 1]);
 
-        const isEndBoundary = currentPos >= text.length ||
-          /[\s\p{P}]/.test(text[currentPos]) ||
-          !/[\w]/.test(text[currentPos]);
+        const isEndBoundary = currentPos >= originalText.length ||
+          /[\s\p{P}]/.test(originalText[currentPos]) ||
+          !/[\w]/.test(originalText[currentPos]);
 
         const isWordBoundary = isStartBoundary && isEndBoundary;
 

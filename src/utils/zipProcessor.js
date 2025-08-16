@@ -7,8 +7,7 @@
  *   import { generateTWTerms } from './utils/zipProcessor.js';
  *   const terms = await generateTWTerms();
  */
-
-import { BibleBookData } from '../common/books.js';
+import JSZip from "jszip";
 
 // Environment detection
 const isNode = typeof process !== 'undefined' && process.versions?.node;
@@ -20,29 +19,6 @@ const CACHE_VERSION = '1.0';
 
 // In-memory cache for processed terms (per session)
 let processedTermsCache = null;
-
-/**
- * Get dependencies dynamically (JSZip works in both environments)
- */
-async function getDeps() {
-  try {
-    const jsZipModule = await import('jszip');
-    const deps = {
-      JSZip: jsZipModule.default
-    };
-
-    // Add Node.js-specific fetch if needed
-    if (isNode) {
-      const nodeModule = await import('node-fetch');
-      deps.fetch = nodeModule.default;
-    }
-
-    return deps;
-  } catch (error) {
-    console.error('Failed to load dependencies:', error);
-    return null;
-  }
-}
 
 async function getCachedZip() {
   if (isBrowser) {
@@ -135,26 +111,6 @@ async function getCachedTerms() {
         } catch (e) { /* ignore cleanup errors */ }
       }
     }
-  } else if (isNode) {
-    // Node.js file system caching
-    try {
-      const deps = await getNodeDeps();
-      if (!deps) return null;
-
-      const { fs, path, fileURLToPath } = deps;
-      const __filename = fileURLToPath(import.meta.url);
-      const __dirname = path.dirname(__filename);
-      const CACHE_FILE = path.join(__dirname, '../../article_terms.json');
-
-      if (fs.existsSync(CACHE_FILE)) {
-        const cachedData = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
-        console.log('Using cached article terms from article_terms.json');
-        memoryCache = cachedData;
-        return cachedData;
-      }
-    } catch (error) {
-      console.log('File cache corrupted, regenerating...');
-    }
   }
 
   return null;
@@ -183,22 +139,6 @@ async function cacheTerms(termMap) {
         console.warn('Failed to cache in browser storage:', error.message);
       }
     }
-  } else if (isNode) {
-    // Node.js file system caching
-    try {
-      const deps = await getNodeDeps();
-      if (!deps) return;
-
-      const { fs, path, fileURLToPath } = deps;
-      const __filename = fileURLToPath(import.meta.url);
-      const __dirname = path.dirname(__filename);
-      const CACHE_FILE = path.join(__dirname, '../../article_terms.json');
-
-      fs.writeFileSync(CACHE_FILE, JSON.stringify(termMap, null, 2), 'utf8');
-      console.log('Article terms cached to article_terms.json');
-    } catch (error) {
-      console.warn('Failed to cache article terms to file:', error.message);
-    }
   }
 }
 
@@ -206,11 +146,6 @@ async function cacheTerms(termMap) {
  * Process ZIP buffer and extract term mappings
  */
 async function processZipBuffer(zipBuffer) {
-  // Use JSZip universally for both Node.js and Browser
-  const deps = await getDeps();
-  if (!deps) throw new Error('Failed to load dependencies');
-  const { JSZip } = deps;
-
   const zip = new JSZip();
   const zipData = await zip.loadAsync(zipBuffer);
 
@@ -268,17 +203,7 @@ export async function generateTWTerms() {
     // Download fresh ZIP
     console.log('Downloading TW archive...');
 
-    let fetchFn;
-    if (isBrowser) {
-      fetchFn = window.fetch;
-    } else {
-      const deps = await getDeps();
-      fetchFn = deps?.fetch;
-    }
-
-    if (!fetchFn) throw new Error('Fetch not available');
-
-    const res = await fetchFn(ZIP_URL);
+    const res = await fetch(ZIP_URL);
     if (!res.ok) throw new Error(`Failed to download ZIP: ${res.status} ${res.statusText}`);
 
     zipBuffer = await res.arrayBuffer();

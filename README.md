@@ -134,7 +134,7 @@ All standard Bible book abbreviations are supported:
 The generated TSV contains these columns:
 
 - **Reference**: Chapter:verse (e.g., "1:1")
-- **ID**: Unique 4-character hex identifier
+- **ID**: Unique 4-character identifier
 - **Tags**: Article category ("keyterm", "name", or empty)
 - **OrigWords**: The matched text from the source
 - **Occurrence**: Occurrence number for this term in this verse
@@ -144,7 +144,7 @@ The generated TSV contains these columns:
 
 ## Requirements
 
-- **Node.js**: >=16.0.0
+- **Node.js**: >=18.0.0 (for native fetch support)
 - **Browser**: Modern browser with ES6 modules support
 - **React.js**: >=16.8.0 (for React usage)
 

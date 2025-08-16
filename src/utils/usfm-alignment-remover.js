@@ -7,10 +7,7 @@ const isNode = typeof window === 'undefined' && typeof process !== 'undefined' &
 
 // Get appropriate fetch implementation
 async function getFetch() {
-  if (isNode) {
-    const nodeFetch = await import('node-fetch');
-    return nodeFetch.default;
-  }
+  // Both Node.js 18+ and browsers have native fetch
   return globalThis.fetch;
 }
 
@@ -50,6 +47,7 @@ export const removeAllTagsExceptChapterVerse = (usfmContent) => {
   cleanContent = cleanContent.replace(/ +\\v +/g, '\n\\v ');
   cleanContent = cleanContent.replace(/ +\\c +/g, '\n\\c ');
   cleanContent = cleanContent.replace(/ *(\\q\d*|\\p|\\ts\\\*) */g, ' ');
+  cleanContent = cleanContent.replace(/\\[ds].*?(\\|\n))/g, '$1');
   cleanContent = cleanContent.replace(/ +/g, ' ');
   cleanContent = cleanContent.replace(/^ +$/g, '');
   cleanContent = cleanContent.replace(/\\f .*?\\f\*/g, ' ');
