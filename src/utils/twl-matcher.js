@@ -4,7 +4,7 @@
 function generateVariants(term) {
   const variants = new Set([term]);
 
-  const nouns = ['doe', 'deer'];
+  const nouns = ['doe', 'deer', 'father'];
 
   // Handle pluralization - simple 's' removal (but not for words ending in 'ss')
   if (term.endsWith('s') && term.length > 2 && !term.endsWith('ss') && !term.endsWith('es')) {
