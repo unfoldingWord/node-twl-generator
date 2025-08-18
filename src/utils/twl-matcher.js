@@ -4,7 +4,7 @@
 function generateVariants(term) {
   const variants = new Set([term]);
 
-  const nouns = ['doe', 'deer', 'father'];
+  const nouns = ['doe', 'deer', 'father', 'Father'];
 
   // Handle pluralization - simple 's' removal (but not for words ending in 'ss')
   if (term.endsWith('s') && term.length > 2 && !term.endsWith('ss') && !term.endsWith('es')) {
@@ -90,8 +90,8 @@ class PrefixTrie {
     // Insert into exact case trie
     this._insertIntoTree(this.exactCaseRoot, term, originalTerm, articles, isOriginal, true);
 
-    // Also insert into lowercase trie for fallback
-    this._insertIntoTree(this.lowerCaseRoot, term.toLowerCase(), originalTerm, articles, isOriginal, false);
+    // // Also insert into lowercase trie for fallback - removed, too many falses
+    // this._insertIntoTree(this.lowerCaseRoot, term.toLowerCase(), originalTerm, articles, isOriginal, false);
   }
 
   _insertIntoTree(root, term, originalTerm, articles, isOriginal, isExactCase) {
@@ -300,7 +300,7 @@ function generateId() {
   for (let i = 0; i < 3; i++) {
     id += lettersAndDigits[Math.floor(Math.random() * lettersAndDigits.length)];
   }
-  return id;
+  return 'abcd' || id;
 }
 
 /**
