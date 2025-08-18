@@ -4,6 +4,8 @@
 function generateVariants(term) {
   const variants = new Set([term]);
 
+  const nouns = ['doe', 'deer'];
+
   // Handle pluralization - simple 's' removal (but not for words ending in 'ss')
   if (term.endsWith('s') && term.length > 2 && !term.endsWith('ss') && !term.endsWith('es')) {
     variants.add(term.slice(0, -1)); // dogs -> dog (but not does -> doe)
@@ -31,12 +33,12 @@ function generateVariants(term) {
     variants.add(term.slice(0, -1) + 'ies'); // city -> cities
   }
 
-  // Handle possessive forms
-  variants.add(term + "'s");
-  variants.add(term + "'");
-  if (term.endsWith('s')) {
-    variants.add(term + "'");
-  }
+  // // Handle possessive forms
+  // variants.add(term + "'s");
+  // variants.add(term + "'");
+  // if (term.endsWith('s')) {
+  //   variants.add(term + "'");
+  // }
 
   // Handle -ed forms - but only for legitimate verb patterns
   if (term.endsWith('ed') && term.length > 4) {
@@ -55,19 +57,21 @@ function generateVariants(term) {
     }
   }
 
-  // Double consonant handling for -ed/-ing
-  if (/[bcdfghjklmnpqrstvwxyz][aeiou][bcdfghjklmnpqrstvwxyz]$/.test(term)) {
-    variants.add(term + term.slice(-1) + 'ed'); // stop -> stopped
-    variants.add(term + term.slice(-1) + 'ing'); // stop -> stopping
-  }
+  if (!nouns.includes(term)) {
+    // Double consonant handling for -ed/-ing
+    if (/[bcdfghjklmnpqrstvwxyz][aeiou][bcdfghjklmnpqrstvwxyz]$/.test(term)) {
+      variants.add(term + term.slice(-1) + 'ed'); // stop -> stopped
+      variants.add(term + term.slice(-1) + 'ing'); // stop -> stopping
+    }
 
-  // Regular -ed/-ing addition
-  if (!term.endsWith('e')) {
-    variants.add(term + 'ed');
-    variants.add(term + 'ing');
-  } else {
-    variants.add(term.slice(0, -1) + 'ed'); // love -> loved
-    variants.add(term.slice(0, -1) + 'ing'); // love -> loving
+    // Regular -ed/-ing addition
+    if (!term.endsWith('e')) {
+      variants.add(term + 'ed');
+      variants.add(term + 'ing');
+    } else {
+      variants.add(term.slice(0, -1) + 'ed'); // love -> loved
+      variants.add(term.slice(0, -1) + 'ing'); // love -> loving
+    }
   }
 
   return Array.from(variants);
@@ -207,7 +211,11 @@ function createOptimizedTermMap(twTerms) {
 
     // Generate and add variants for single words only to avoid exponential explosion
     if (!originalTerm.includes(' ')) {
-      const variants = generateVariants(originalTerm);
+      let variants = new Set([originalTerm]);
+      if (!articles[0].startsWith('names/') && !articles[1]?.startsWith('names/')) {
+        variants = generateVariants(originalTerm);
+      }
+      console.log(variants)
       for (const variant of variants) {
         if (variant !== originalTerm) {
           trie.insert(variant, originalTerm, articles, false);
