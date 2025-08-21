@@ -1,37 +1,37 @@
 /**
  * Generate morphological variants of a term
  */
-function generateVariants(term) {
+function generateVariants(term, isName = false) {
   const variants = new Set([term]);
 
-  const nouns = ['doe', 'deer', 'father', 'Father'];
-  const do_not_pluralize = ['doe'];
-  const do_not_depluralize = [];
+  const isNoun = ['horn', 'mare', 'steed', 'horse', 'doe', 'deer', 'father', 'Father'].includes(term) || isName;
+  const doNotPluralize = ['doe'].includes(term);
+  const doNotDepluralize = ['kids'].includes(term) || isName;
 
   // Handle pluralization - simple 's' removal (but not for words ending in 'ss')
-  if (term.endsWith('s') && term.length > 2 && !term.endsWith('ss') && !term.endsWith('es') && !do_not_depluralize.includes(term)) {
+  if (term.endsWith('s') && term.length > 2 && !term.endsWith('ss') && !term.endsWith('es') && !doNotDepluralize) {
     variants.add(term.slice(0, -1)); // dogs -> dog (but not does -> doe)
-  } else if (!do_not_pluralize.includes(term)) {
+  } else if (!doNotPluralize) {
     variants.add(term + 's'); // dog -> dogs
   }
 
   // Handle 'es' endings - but only for legitimate plural patterns
-  if (term.endsWith('es') && term.length > 4 && !do_not_depluralize.includes(term)) {
+  if (term.endsWith('es') && term.length > 4 && !doNotDepluralize) {
     const base = term.slice(0, -2);
     // Only if the base word would naturally take 'es' plural
     if (/[sxz]$|[cs]h$/.test(base)) {
       variants.add(base); // horses -> horse, churches -> church
     }
-  } else if (term.endsWith('e') && !do_not_pluralize.includes(term)) {
+  } else if (term.endsWith('e') && !doNotPluralize) {
     variants.add(term + 's'); // horse -> horses
-  } else if (/[sxz]$|[cs]h$/.test(term) && !do_not_pluralize.includes(term)) {
+  } else if (/[sxz]$|[cs]h$/.test(term) && !doNotPluralize) {
     variants.add(term + 'es'); // church -> churches
   }
 
   // Handle 'ies' endings for words ending in 'y'
-  if (term.endsWith('ies') && term.length > 4 && !do_not_depluralize.includes(term)) {
+  if (term.endsWith('ies') && term.length > 4 && !doNotDepluralize) {
     variants.add(term.slice(0, -3) + 'y'); // cities -> city
-  } else if (term.endsWith('y') && term.length > 2 && !/[aeiou]y$/.test(term) && !do_not_pluralize.includes(term)) {
+  } else if (term.endsWith('y') && term.length > 2 && !/[aeiou]y$/.test(term) && !doNotPluralize) {
     variants.add(term.slice(0, -1) + 'ies'); // city -> cities
   }
 
@@ -42,24 +42,26 @@ function generateVariants(term) {
   //   variants.add(term + "'");
   // }
 
-  if (!nouns.includes(term)) {
-    // Handle -ed forms - but only for legitimate verb patterns
-    if (term.endsWith('ed') && term.length > 4) {
-      const base = term.slice(0, -2);
-      // Only create base form if it looks like a legitimate verb stem
-      if (base.length > 2) {
-        variants.add(base); // walked -> walk
-      }
-    }
+  // if (!isNoun) {
+  //   // Handle -ed forms - but only for legitimate verb patterns
+  //   if (term.endsWith('ed') && term.length > 4) {
+  //     const base = term.slice(0, -2);
+  //     // Only create base form if it looks like a legitimate verb stem
+  //     if (base.length > 2) {
+  //       variants.add(base); // walked -> walk
+  //     }
+  //   }
 
-    // Handle -ing forms
-    if (term.endsWith('ing') && term.length > 5) {
-      const base = term.slice(0, -3);
-      if (base.length > 2) {
-        variants.add(base); // walking -> walk
-      }
-    }
+  // // Handle -ing forms
+  // if (term.endsWith('ing') && term.length > 5) {
+  //   const base = term.slice(0, -3);
+  //   if (base.length > 2) {
+  //     variants.add(base); // walking -> walk
+  //   }
+  // }
 
+
+  if (!isNoun) {
     // Double consonant handling for -ed/-ing
     if (/[bcdfghjklmnpqrstvwxyz][aeiou][bcdfghjklmnpqrstvwxyz]$/.test(term)) {
       variants.add(term + term.slice(-1) + 'ed'); // stop -> stopped
@@ -73,6 +75,12 @@ function generateVariants(term) {
     } else {
       variants.add(term.slice(0, -1) + 'ed'); // love -> loved
       variants.add(term.slice(0, -1) + 'ing'); // love -> loving
+    }
+  }
+
+  for (const variant of Array.from(variants)) {
+    if (variant.length > 0 && variant[0] === variant[0].toLowerCase() && /[a-z]/.test(variant[0])) {
+      variants.add(variant[0].toUpperCase() + variant.slice(1));
     }
   }
 
@@ -214,9 +222,8 @@ function createOptimizedTermMap(twTerms) {
     // Generate and add variants for single words only to avoid exponential explosion
     if (!originalTerm.includes(' ')) {
       let variants = new Set([originalTerm]);
-      if (!articles[0].startsWith('names/') && !articles[1]?.startsWith('names/')) {
-        variants = generateVariants(originalTerm);
-      }
+      const isName = articles[0].startsWith('names/') || articles[1]?.startsWith('names/')
+      variants = generateVariants(originalTerm, isName);
       console.log(variants)
       for (const variant of variants) {
         if (variant !== originalTerm) {
