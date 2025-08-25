@@ -69,7 +69,7 @@ const usfmContent = `
 \\v 1 In the beginning...
 `;
 
-const book = 'mat'; // Book code (optional if USFM contains book info)
+const book = 'mat';
 
 const tsv = await generateTWLWithUsfm(book, usfmContent);
 // tsv is a string in TSV format, ready to save or process
