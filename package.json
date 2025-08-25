@@ -1,6 +1,6 @@
 {
   "name": "twl-generator",
-  "version": "1.2.12",
+  "version": "1.2.13",
   "description": "Generate term-to-article lists from unfoldingWord en_tw archive for Bible books. Works in both Node.js (CLI) and React.js (browser) environments.",
   "main": "src/index.js",
   "bin": {
@@ -22,15 +22,15 @@
     "unfoldingword",
     "translation-words"
   ],
-  "author": "Rich Mahn <richmahn@example.com>",
+  "author": "Richard Mahn <rich.mahn@unfoldingword.org>",
   "license": "MIT",
-  "homepage": "https://github.com/yourusername/twl-generator#readme",
+  "homepage": "https://github.com/unfoldingWord/node-twl-generator#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yourusername/twl-generator.git"
+    "url": "git+https://github.com/unfoldingWord/node-twl-generator.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/twl-generator/issues"
+    "url": "https://github.com/unfoldingWord/node-twl-generator/issues"
   },
   "files": [
     "src/cli.js",
