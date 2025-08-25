@@ -309,7 +309,7 @@ function generateId() {
   for (let i = 0; i < 3; i++) {
     id += lettersAndDigits[Math.floor(Math.random() * lettersAndDigits.length)];
   }
-  return 'abcd' || id;
+  return id;
 }
 
 /**

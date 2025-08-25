@@ -11,143 +11,95 @@ Generate term-to-article lists from unfoldingWord en_tw archive for Bible books.
 - ✅ **Morphological Variants**: Handles plurals, possessives, verb forms
 - ✅ **Parentheses Normalization**: "Joseph (OT)" → "Joseph" for better coverage
 
+---
+
 ## Usage
 
-### CLI (Node.js)
+### CLI
+
+Install globally:
 
 ```bash
-# Install globally
 npm install -g twl-generator
-
-# Generate TSV for a Bible book
-twl-generator --book JHN --output john.tsv
-
-# Process local USFM file
-twl-generator --usfm my-file.usfm --output results.tsv
 ```
 
-### React.js / Browser
+Generate a TWL TSV for a Bible book (downloads USFM from Door43):
 
-```jsx
-import { generateTWTerms, getCacheInfo, clearCache } from 'twl-generator/src/utils/zipProcessor.js';
-
-function MyTWLComponent() {
-  const [terms, setTerms] = useState(null);
-  const [loading, setLoading] = useState(false);
-
-  const loadTerms = async () => {
-    setLoading(true);
-    try {
-      // First load: Downloads and processes (~3-4 seconds)
-      // Subsequent loads: Uses browser cache (~instant)
-      const termData = await generateTWTerms();
-      setTerms(termData);
-
-      // Debug cache info
-      console.log('Cache info:', getCacheInfo());
-    } catch (error) {
-      console.error('Failed to load terms:', error);
-    }
-    setLoading(false);
-  };
-
-  const handleClearCache = async () => {
-    await clearCache();
-    console.log('Cache cleared - next load will download fresh data');
-  };
-
-  return (
-    <div>
-      {loading && <p>Loading translation words...</p>}
-      <button onClick={() => loadTerms()}>Load Terms</button>
-      <button onClick={handleClearCache}>Clear Cache</button>
-      {terms && <p>Loaded {Object.keys(terms).length} terms</p>}
-    </div>
-  );
-}
+```bash
+twl-generator --book rut
 ```
 
-### Node.js Module
+Generate a TWL TSV from a local USFM file:
+
+```bash
+twl-generator --usfm ./myfile.usfm
+```
+
+Specify output file:
+
+```bash
+twl-generator --usfm ./myfile.usfm --output ./output.tsv
+```
+
+You can also combine `--book` and `--usfm` (book is used for output filename and context):
+
+```bash
+twl-generator --usfm ./myfile.usfm --book rut
+```
+
+---
+
+### As a Library (Node.js/ESM/React)
+
+Install as a dependency:
+
+```bash
+npm install twl-generator
+```
+
+#### Example: Generate TWL TSV from USFM string
 
 ```js
 import { generateTWLWithUsfm } from 'twl-generator';
 
-const result = await generateTWLWithUsfm('RUT');
-console.log(result);
+// USFM string (can be loaded from file, API, etc.)
+const usfmContent = `
+\\id MAT
+\\c 1
+\\v 1 In the beginning...
+`;
+
+const book = 'mat'; // Book code (optional if USFM contains book info)
+
+const tsv = await generateTWLWithUsfm(book, usfmContent);
+// tsv is a string in TSV format, ready to save or process
+console.log(tsv);
 ```
 
-## Browser Caching Strategy
+#### Example: Generate TWL TSV by fetching USFM for a book
 
-The package uses a multi-tier caching approach for optimal performance in React.js:
+```js
+import { generateTWLWithUsfm } from 'twl-generator';
 
-1. **Memory Cache**: Fastest access during current session
-2. **localStorage**: Persistent across browser sessions
-3. **sessionStorage**: Fallback for private browsing mode
-4. **Auto-regeneration**: Downloads fresh data when cache is invalid
+const book = 'rut'; // Book code
 
-### Cache Performance
-
-- **Cold start** (no cache): ~3-4 seconds
-- **Warm start** (browser cache): ~50-100ms
-- **Hot start** (memory cache): ~1-5ms
-
-## API Reference
-
-### `generateTWTerms()`
-
-Generate terms mapping with caching.
-
-- **Returns**: Promise<Object> - Term mapping object
-
-### `clearCache()`
-
-Clear all caches and force fresh download on next call.
-
-- **Returns**: Promise<boolean> - Success status
-
-### `getCacheInfo()`
-
-Get cache status for debugging.
-
-- **Returns**: Object with cache details
-
-## Installation
-
-```bash
-# Global installation (for CLI usage)
-npm install -g twl-generator
-
-# Local installation (for React.js projects)
-npm install twl-generator
+const tsv = await generateTWLWithUsfm(book);
+// This will fetch the USFM for the book from Door43 and return the TSV string
+console.log(tsv);
 ```
 
-## Supported Bible Books
+---
 
-All standard Bible book abbreviations are supported:
+### API Reference
 
-**Old Testament**: GEN, EXO, LEV, NUM, DEU, JOS, JDG, RUT, 1SA, 2SA, 1KI, 2KI, 1CH, 2CH, EZR, NEH, EST, JOB, PSA, PRO, ECC, SNG, ISA, JER, LAM, EZK, DAN, HOS, JOL, AMO, OBA, JON, MIC, NAH, HAB, ZEP, HAG, ZEC, MAL
+#### `generateTWLWithUsfm(book, usfmContent?)`
 
-**New Testament**: MAT, MRK, LUK, JHN, ACT, ROM, 1CO, 2CO, GAL, EPH, PHP, COL, 1TH, 2TH, 1TI, 2TI, TIT, PHM, HEB, JAS, 1PE, 2PE, 1JN, 2JN, 3JN, JUD, REV
+- `book`: (string) Book code (e.g., 'mat', 'rut'). Required if `usfmContent` is not provided.
+- `usfmContent`: (string, optional) USFM file content. If provided, this is used instead of fetching from Door43.
+- **Returns:** `Promise<string>` — TSV string of TWL matches.
 
-## Output Format
-
-The generated TSV contains these columns:
-
-- **Reference**: Chapter:verse (e.g., "1:1")
-- **ID**: Unique 4-character identifier
-- **Tags**: Article category ("keyterm", "name", or empty)
-- **OrigWords**: The matched text from the source
-- **Occurrence**: Occurrence number for this term in this verse
-- **TWLink**: Link to the translation words article
-- **Disambiguation**: Multiple article options (if applicable)
-- **Context**: Verse text with [matched term] in brackets
-
-## Requirements
-
-- **Node.js**: >=18.0.0 (for native fetch support)
-- **Browser**: Modern browser with ES6 modules support
-- **React.js**: >=16.8.0 (for React usage)
+---
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT
