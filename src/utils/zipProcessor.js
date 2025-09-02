@@ -27,7 +27,13 @@ async function getCachedZip() {
       const cached = localStorage.getItem(CACHE_KEY);
       if (cached) {
         const data = JSON.parse(cached);
-        if (data.version === CACHE_VERSION) {
+        // Only use cache if version matches and cache is less than 5 minutes old
+        const FIVE_MINUTES = 5 * 60 * 1000;
+        if (
+          data.version === CACHE_VERSION &&
+          data.timestamp &&
+          (Date.now() - data.timestamp) < FIVE_MINUTES
+        ) {
           console.log('Using cached ZIP from browser storage');
           return new Uint8Array(data.zipData);
         } else {

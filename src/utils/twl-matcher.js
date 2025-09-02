@@ -4,7 +4,7 @@
 function generateVariants(term, isName = false) {
   const variants = new Set([term]);
 
-  const isNoun = ['horn', 'mare', 'steed', 'horse', 'doe', 'deer', 'father', 'Father'].includes(term) || isName;
+  const isNoun = ['horn', 'mare', 'steed', 'horse', 'doe', 'deer', 'father', 'Father', 'cross', 'well'].includes(term) || isName;
   const doNotPluralize = ['doe'].includes(term);
   const doNotDepluralize = ['kids'].includes(term) || isName;
 
