@@ -159,9 +159,9 @@ The generated TSV contains these columns:
 | OrigWords | The matched word(s) from the text |
 | Occurrence | Which occurrence of this word in the verse |
 | TWLink | Link to Translation Words article (rc://*/tw/dict/bible/...) |
-| Strongs | Original Strong's number |
 | GLQuote | English text context from ULT |  
 | GLOccurrence | Occurrence number in English context |
+| Strongs | Original Strong's number |
 | Variant of | Original term if morphological variant was used |
 | Disambiguation | List of other possible articles |
 

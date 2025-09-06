@@ -713,7 +713,7 @@ export async function generateTwlByBook(bookCode, options = {}) {
   };
 
   // New header order: Reference, ID, Tags, OrigWords, Occurrence, TWLink, Strongs, GLQuote, GLOccurrence
-  const finalHeaderBase = ['Reference', 'ID', 'Tags', 'OrigWords', 'Occurrence', 'TWLink', 'Strongs', 'GLQuote', 'GLOccurrence'];
+  const finalHeaderBase = ['Reference', 'ID', 'Tags', 'OrigWords', 'Occurrence', 'TWLink', 'GLQuote', 'GLOccurrence', 'Strongs'];
   const usedIds = new Set();
   const genId = () => {
     const letters = 'abcdefghijklmnopqrstuvwxyz';
@@ -741,9 +741,9 @@ export async function generateTwlByBook(bookCode, options = {}) {
       c[A.OrigWords],
       c[A.Occurrence],
       c[A.TWLink],
-      strongsVal,
       c[A.GLQuote],
       c[A.GLOccurrence],
+      strongsVal,
     ];
     preparedRows.push(newRow);
   }
@@ -756,9 +756,9 @@ export async function generateTwlByBook(bookCode, options = {}) {
     OrigWords: 3,
     Occurrence: 4,
     TWLink: 5,
-    Strongs: 6,
-    GLQuote: 7,
-    GLOccurrence: 8,
+    GLQuote: 6,
+    GLOccurrence: 7,
+    Strongs: 8,
   };
 
   // 5) pick best TWLink based on GLQuote terms using Strongs column; include Variant of column
