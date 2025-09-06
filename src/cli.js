@@ -1,86 +1,84 @@
 #!/usr/bin/env node
-import { generateTWLWithUsfm } from './index.js';
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { generateTwlByBook } from '../src/index.js';
+import { BibleBookData } from '../src/common/books.js';
 
-const args = process.argv.slice(2);
+const THIS_DIR = path.dirname(new URL(import.meta.url).pathname);
 
-function printHelp() {
-  console.log(`Usage: generate-twls [options]
-
-Options:
-  --book <book>           Specify the Bible book (e.g., rut)
-  --usfm <path>          Path to USFM file to process
-  --output <path>        Path to output TSV file
-  --help                 Show this help message
-
-Examples:
-  generate-twls --book rut
-  generate-twls --usfm ./41-MAT.usfm --output ./mat_twl.tsv
-  generate-twls --usfm ./file.usfm --book rut`);
-}
-
-let book = null;
-let usfmPath = null;
-let outputPath = null;
-
-for (let i = 0; i < args.length; i++) {
-  if (args[i] === '--book' && args[i + 1]) {
-    book = args[i + 1].toLowerCase();
-    i++;
-  } else if (args[i] === '--usfm' && args[i + 1]) {
-    usfmPath = args[i + 1];
-    i++;
-  } else if (args[i] === '--output' && args[i + 1]) {
-    outputPath = args[i + 1];
-    i++;
-  } else if (args[i] === '--help') {
-    printHelp();
-    process.exit(0);
+async function readBooksJs() {
+  const map = {};
+  for (const [code, meta] of Object.entries(BibleBookData)) {
+    map[code.toUpperCase()] = { usfm: meta.usfm, testament: meta.testament };
   }
+  return map;
 }
 
-// Validate arguments
-if (!book && !usfmPath) {
-  console.error('Error: Either --book or --usfm parameter is required');
-  printHelp();
-  process.exit(1);
+function parseArgs(argv) {
+  const args = { book: '', out: '', outDir: '', all: false, useCompromise: false };
+  for (let i = 2; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--book' || a === '-b') { args.book = argv[++i] || ''; }
+    else if (a === '--out' || a === '-o') { args.out = argv[++i] || ''; }
+    else if (a === '--out-dir' || a === '-O') { args.outDir = argv[++i] || ''; }
+    else if (a === '--all' || a === '-A') { args.all = true; }
+    else if (a === '--use-compromise') { args.useCompromise = true; }
+  }
+  return args;
 }
 
-if (usfmPath && !fs.existsSync(usfmPath)) {
-  console.error(`Error: USFM file not found: ${usfmPath}`);
-  process.exit(1);
-}
-
-(async () => {
-  try {
-    let usfmContent = null;
-    if (usfmPath) {
-      usfmContent = fs.readFileSync(usfmPath, 'utf8');
-      console.log(`Reading USFM from: ${usfmPath}`);
+async function main() {
+  const { book, out, outDir, all, useCompromise } = parseArgs(process.argv);
+  if (all || (book && book.toLowerCase() === 'all')) {
+    const books = await readBooksJs();
+    const codes = Object.keys(books);
+    const destDir = outDir ? path.resolve(outDir) : path.resolve(THIS_DIR, '..'); // default to twl-generator dir
+    await fs.mkdir(destDir, { recursive: true });
+    console.error(`Generating TWL for ${codes.length} books to ${destDir} (useCompromise=${useCompromise})`);
+    for (const code of codes) {
+      try {
+        const { matchedTsv, noMatchTsv } = await generateTwlByBook(code, { useCompromise });
+        const fname = `${code.toLowerCase()}.twl.tsv`;
+        const outPath = path.join(destDir, fname);
+        await fs.writeFile(outPath, matchedTsv, 'utf8');
+        const nmPath = path.join(destDir, `${code.toLowerCase()}.no-match.twl.tsv`);
+        await fs.writeFile(nmPath, noMatchTsv, 'utf8');
+        console.error(`  ✓ ${code} -> ${fname}`);
+      } catch (err) {
+        console.error(`  ✗ ${code} failed:`, err.message || err);
+      }
     }
+    return;
+  }
 
-    const tsv = await generateTWLWithUsfm(book, usfmContent);
-
-    // Determine output filename
-    let filename;
-    if (outputPath) {
-      filename = outputPath;
-    } else if (book) {
-      filename = `twl_${book.toUpperCase()}.tsv`;
-    } else if (usfmPath) {
-      const baseName = path.basename(usfmPath, path.extname(usfmPath));
-      filename = `${baseName}.tsv`;
-    } else {
-      filename = 'output.tsv';
-    }
-
-    // Save TSV to file
-    fs.writeFileSync(filename, tsv, 'utf8');
-    console.log(`TSV file saved as ${filename}`);
-    console.log(`Found ${tsv.split('\n').length - 1} matches`);
-  } catch (error) {
-    console.error('Error:', error.message);
+  if (!book) {
+    console.error('Usage: generate-twl --book <code>|all [--out <file.tsv> | --out-dir <dir>] [--use-compromise]');
     process.exit(1);
   }
-})();
+
+  const { matchedTsv, noMatchTsv } = await generateTwlByBook(book, { useCompromise });
+  if (out) {
+    const outPath = path.resolve(out);
+    await fs.writeFile(outPath, matchedTsv, 'utf8');
+    console.log(`Wrote ${out}`);
+    const dir = path.dirname(outPath);
+    const base = path.basename(outPath);
+    const nmPath = path.join(dir, base.replace(/\.twl\.tsv$/i, '.no-match.twl.tsv'));
+    await fs.writeFile(nmPath, noMatchTsv, 'utf8');
+    console.log(`Wrote ${nmPath}`);
+  } else if (outDir) {
+    const destDir = path.resolve(outDir);
+    await fs.mkdir(destDir, { recursive: true });
+    const outPath = path.join(destDir, `${book.toLowerCase()}.twl.tsv`);
+    await fs.writeFile(outPath, matchedTsv, 'utf8');
+    const nmPath = path.join(destDir, `${book.toLowerCase()}.no-match.twl.tsv`);
+    await fs.writeFile(nmPath, noMatchTsv, 'utf8');
+    console.log(`Wrote ${outPath}`);
+    console.log(`Wrote ${nmPath}`);
+  } else {
+    // When writing to stdout, output only the matched TSV to avoid mixing tables
+    process.stdout.write(matchedTsv);
+  }
+}
+
+main().catch(err => { console.error(err); process.exit(1); });

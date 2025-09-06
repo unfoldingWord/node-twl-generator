@@ -1,104 +1,90 @@
-# twl-generator
+# TWL Generator
 
-Generate term-to-article lists from unfoldingWord en_tw archive for Bible books. Works in both Node.js (CLI) and React.js (browser) environments with intelligent caching.
+A Node.js library and CLI tool for generating Translation Word Links (TWL) TSV files from Door43 USFM data and Translation Words (TW) metadata.
 
-## Features
+## Installation
 
-- ✅ **Universal**: Works in Node.js and browser environments
-- ✅ **Smart Caching**: File system (Node.js) or localStorage/sessionStorage (browser)
-- ✅ **Performance**: Optimized matching with PrefixTrie algorithm
-- ✅ **Case Sensitivity**: Proper God/god distinction (God→kt/god, god→kt/falsegod)
-- ✅ **Morphological Variants**: Handles plurals, possessives, verb forms
-- ✅ **Parentheses Normalization**: "Joseph (OT)" → "Joseph" for better coverage
-
----
-
-## Usage
-
-### CLI
-
-Install globally:
-
+### Global CLI
 ```bash
 npm install -g twl-generator
 ```
 
-Generate a TWL TSV for a Bible book (downloads USFM from Door43):
-
-```bash
-twl-generator --book rut
-```
-
-Generate a TWL TSV from a local USFM file:
-
-```bash
-twl-generator --usfm ./myfile.usfm
-```
-
-Specify output file:
-
-```bash
-twl-generator --usfm ./myfile.usfm --output ./output.tsv
-```
-
-You can also combine `--book` and `--usfm` (book is used for output filename and context):
-
-```bash
-twl-generator --usfm ./myfile.usfm --book rut
-```
-
----
-
-### As a Library (Node.js/ESM/React)
-
-Install as a dependency:
-
+### Library Usage
 ```bash
 npm install twl-generator
 ```
 
-#### Example: Generate TWL TSV from USFM string
+## Usage
 
-```js
-import { generateTWLWithUsfm } from 'twl-generator';
-
-// USFM string (can be loaded from file, API, etc.)
-const usfmContent = `
-\\id MAT
-\\c 1
-\\v 1 In the beginning...
-`;
-
-const book = 'mat';
-
-const tsv = await generateTWLWithUsfm(book, usfmContent);
-// tsv is a string in TSV format, ready to save or process
-console.log(tsv);
+### Command Line
+Generate TWL for a specific book:
+```bash
+generate-twl --book deu --out deuteronomy.twl.tsv
 ```
 
-#### Example: Generate TWL TSV by fetching USFM for a book
-
-```js
-import { generateTWLWithUsfm } from 'twl-generator';
-
-const book = 'rut'; // Book code
-
-const tsv = await generateTWLWithUsfm(book);
-// This will fetch the USFM for the book from Door43 and return the TSV string
-console.log(tsv);
+Generate TWL for all books:
+```bash
+generate-twl --all --out-dir ./output
 ```
 
----
+Options:
+- `--book <code>`: Book code (e.g., gen, deu, mat, etc.)
+- `--all`: Generate for all books
+- `--out <file>`: Output file path
+- `--out-dir <dir>`: Output directory for all books
+- `--use-compromise`: Enable advanced verb conjugation matching
 
-### API Reference
+### Library Usage
+```javascript
+import { generateTwlByBook } from 'twl-generator';
 
-#### `generateTWLWithUsfm(book, usfmContent?)`
+const { matchedTsv, noMatchTsv } = await generateTwlByBook('deu');
+console.log(matchedTsv); // TSV string with matched Translation Word links
+```
 
-- `book`: (string) Book code (e.g., 'mat', 'rut'). Required if `usfmContent` is not provided.
-- `usfmContent`: (string, optional) USFM file content. If provided, this is used instead of fetching from Door43.
-- **Returns:** `Promise<string>` — TSV string of TWL matches.
+## Features
 
----
+- **Smart Matching**: Multi-stage matching algorithm with word boundaries, case sensitivity, and morphological variants
+- **Morphological Support**: Handles plurals, verb conjugations, and irregular forms
+- **Variant Detection**: Identifies when terms are matched via substring or truncation
+- **Browser Compatible**: Core library works in modern browsers
+- **CLI Ready**: Global command-line tool for batch processing
+
+## Matching Algorithm
+
+The TWL generator uses a sophisticated 4-stage matching process:
+
+1. **Case-sensitive word boundary**: Exact matches with word boundaries
+2. **Case-insensitive word boundary**: Flexible case matching with boundaries  
+3. **Case-sensitive substring**: Exact substring matching
+4. **Case-insensitive stripped forms**: Controlled morphological variants
+
+## Data Sources
+
+- **USFM**: Fetched from Door43 repositories (unfoldingWord/hbo_uhb, unfoldingWord/el-x-koine_ugnt)
+- **Translation Words**: Local tw_strongs_list.json with Strong's mappings and term lists
+- **English Bible**: Uses unfoldingWord/en_ult for GLQuote generation
+
+## Output Format
+
+The generated TSV includes these columns:
+- Reference, ID, Tags, OrigWords, Occurrence, TWLink, Strongs, GLQuote, GLOccurrence, Variant of, Disambiguation
+
+## Development
+
+```bash
+# Install dependencies
+npm install
+
+# Run CLI locally
+npm start -- --book gen
+
+# Run browser demo
+npm run styleguide
+
+# Build for production
+npm run styleguide:build
+```
 
 ## License
 
