@@ -512,10 +512,9 @@ function findMatchingArticles(glq, articlesList, termMap, opts = {}) {
         const termOrig = tobj.orig;
         if (termOrig) {
           // Match if the term appears:
-          // - At word boundary (beginning or end of string, or after/before whitespace or punctuation)
-          // - After any type of dash (—, –, -)
-          // This regex ensures we don't match inside other words like "fromever" matching "Rome"
-          const re3 = new RegExp(`(?:^|\\b|[—–-])${escapeRegExp(termOrig)}(?=\\b|$|[—–-])`, '');
+          // - At word boundary (beginning of word or after dash)
+          // - Allow substring matching (e.g., "reap" matches "reapers")
+          const re3 = new RegExp(`(?:^|\\b|[—–-])${escapeRegExp(termOrig)}`, '');
           if (re3.test(textOrig)) { stage = 3; termHit = termOrig; break; }
         }
       }
@@ -592,7 +591,8 @@ function findMatchingArticles(glq, articlesList, termMap, opts = {}) {
             }
           } else {
             // For non-stripped forms, match at word boundaries or after dashes (case-insensitive)
-            const regex4 = new RegExp(`(?:^|\\b|[—–-])${escapeRegExp(form)}(?=\\b|$|[—–-])`, 'i');
+            // Allow substring matching (e.g., "reap" matches "reapers")
+            const regex4 = new RegExp(`(?:^|\\b|[—–-])${escapeRegExp(form)}`, 'i');
             if (regex4.test(textOrig)) {
               stage = 4;
               termHit = termOrig;
