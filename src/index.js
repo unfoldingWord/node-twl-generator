@@ -612,7 +612,37 @@ function findMatchingArticles(glq, articlesList, termMap, opts = {}) {
   return perArticleMatches;
 }
 
-function chooseArticleByGlQuote(glq, strongId, strongPivot, termMap, opts = {}) {
+// Get articles for disambiguation: those with matching Strong's OR those with empty Strong's lists
+function getDisambiguationArticles(strongId, strongPivot, termMap, twMap) {
+  // Get articles with matching Strong's (same as prioritizeArticles but without prioritization)
+  let articlesWithMatchingStrongs = (strongPivot[strongId] || []).slice();
+  if ((!articlesWithMatchingStrongs || !articlesWithMatchingStrongs.length) && /^(H|G)\d+[a-f]$/.test(strongId)) {
+    const base = strongId.slice(0, -1);
+    articlesWithMatchingStrongs = (strongPivot[base] || []).slice();
+  }
+
+  const result = new Set(articlesWithMatchingStrongs);
+
+  // Add articles that have empty Strong's lists (orphaned articles)
+  for (const [article, val] of Object.entries(twMap)) {
+    const articleData = val || {};
+    const articleStrongs = articleData.strongs || [];
+
+    // Check if this article has empty Strong's lists
+    // An article qualifies if it has no strongs array or if all its strongs arrays are empty
+    const hasEmptyStrongs = !Array.isArray(articleStrongs) ||
+      articleStrongs.length === 0 ||
+      articleStrongs.every(strongsArray => !Array.isArray(strongsArray) || strongsArray.length === 0);
+
+    if (hasEmptyStrongs) {
+      result.add(article);
+    }
+  }
+
+  return Array.from(result);
+}
+
+function chooseArticleByGlQuote(glq, strongId, strongPivot, termMap, twMap, opts = {}) {
   const useCompromise = !!opts.useCompromise;
   const nlp = opts.nlp;
   const prioritized = prioritizeArticles(glq, strongId, strongPivot);
@@ -634,11 +664,11 @@ function chooseArticleByGlQuote(glq, strongId, strongPivot, termMap, opts = {}) 
   bestMatches.sort((a, b) => artIndex.get(a.art) - artIndex.get(b.art));
   const chosenMatch = bestMatches[0];
 
-  // For disambiguation, search ALL articles in termMap, not just those with matching Strong's
-  const allArticles = Array.from(termMap.keys());
-  const allMatches = findMatchingArticles(glq, allArticles, termMap, { useCompromise, nlp });
+  // For disambiguation, search articles with matching Strong's OR articles with empty Strong's lists
+  const disambiguationArticles = getDisambiguationArticles(strongId, strongPivot, termMap, twMap);
+  const allMatches = findMatchingArticles(glq, disambiguationArticles, termMap, { useCompromise, nlp });
 
-  // Disambiguation: list all matched articles (from all articles, not just Strong's filtered)
+  // Disambiguation: list all matched articles (from Strong's + empty Strong's filtered articles)
   const matchesList = allMatches.map(m => m.art);
   const disamb = matchesList.length > 1 ? `(${matchesList.join(', ')})` : '';
 
@@ -966,7 +996,7 @@ export async function generateTwlByBook(bookCode, options = {}) {
     totalRows++;
     const strongId = cols[H.Strongs];
     const glq = cols[H.GLQuote] || '';
-    const result = chooseArticleByGlQuote(glq, strongId, strongPivot, termMap, { useCompromise, nlp });
+    const result = chooseArticleByGlQuote(glq, strongId, strongPivot, termMap, twJson, { useCompromise, nlp });
     if (!result) {
       droppedRows++;
       if (noMatchSamples.length < 8) {
