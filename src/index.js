@@ -289,17 +289,15 @@ function prioritizeArticles(glq, strongId, strongPivot) {
   return slugMatched.concat(restSorted);
 }
 
-function chooseArticleByGlQuote(glq, strongId, strongPivot, termMap, opts = {}) {
+// Helper function to find matching articles from a given list of articles
+function findMatchingArticles(glq, articlesList, termMap, opts = {}) {
   const useCompromise = !!opts.useCompromise;
   const nlp = opts.nlp;
-  const prioritized = prioritizeArticles(glq, strongId, strongPivot);
-  if (!prioritized.length) return null;
   const textOrig = String(glq || '');
   const textLower = textOrig.toLowerCase();
   const escapeRegExp = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-  // Utility: split a term into head (all but last word) and last word.
-  // head has no trailing space, last has no leading space. Rejoin with (head ? head+" " : "") + last
+  // Same helper functions as in chooseArticleByGlQuote
   const splitHeadLast = (term) => {
     const parts = String(term || '').trim().split(/\s+/);
     if (parts.length <= 1) return { head: '', last: parts[0] || '' };
@@ -307,7 +305,6 @@ function chooseArticleByGlQuote(glq, strongId, strongPivot, termMap, opts = {}) 
     return { head: parts.join(' '), last };
   };
 
-  // Basic pluralization helper for English terms. Handles common endings and a few irregulars.
   const pluralizeTerm = (term) => {
     const out = new Set();
     const add = (s) => { const v = s.trim(); if (v) out.add(v); };
@@ -318,7 +315,6 @@ function chooseArticleByGlQuote(glq, strongId, strongPivot, termMap, opts = {}) 
     const pluralizeWord = (w) => {
       const lw = w.toLowerCase();
       if (irregular[lw]) return irregular[lw];
-      // endings
       if (/[^aeiou]y$/i.test(w)) return w.replace(/y$/i, 'ies');
       if (/(s|x|z|ch|sh)$/i.test(w)) return w + 'es';
       if (/f$/i.test(w) && !/(roof|belief|chief|proof)$/i.test(w)) return w.replace(/f$/i, 'ves');
@@ -334,33 +330,30 @@ function chooseArticleByGlQuote(glq, strongId, strongPivot, termMap, opts = {}) 
       const pl = pluralizeWord(last);
       add([...parts, pl].join(' '));
     }
-    // also the simple +s as fallback
     add(term + 's');
     return Array.from(out);
   };
 
-  // Helpers to form -ing and -ed variants for a single word
   const isVowel = (ch) => /[aeiou]/i.test(ch);
   const isConsonant = (ch) => /[a-z]/i.test(ch) && !isVowel(ch);
   const endsWithCVC = (w) => {
     if (w.length < 3) return false;
     const a = w[w.length - 3], b = w[w.length - 2], c = w[w.length - 1];
     if (!isConsonant(a) || !isVowel(b) || !isConsonant(c)) return false;
-    // don't double for w, x, y
     if (/[wxy]/i.test(c)) return false;
     return true;
   };
   const presentParticipleWord = (w) => {
-    if (/ie$/i.test(w)) return w.replace(/ie$/i, 'ying'); // tie -> tying
-    if (/ee$/i.test(w)) return w + 'ing'; // see -> seeing
-    if (/e$/i.test(w)) return w.replace(/e$/i, 'ing'); // make -> making
-    if (endsWithCVC(w)) return w + w[w.length - 1] + 'ing'; // run -> running
+    if (/ie$/i.test(w)) return w.replace(/ie$/i, 'ying');
+    if (/ee$/i.test(w)) return w + 'ing';
+    if (/e$/i.test(w)) return w.replace(/e$/i, 'ing');
+    if (endsWithCVC(w)) return w + w[w.length - 1] + 'ing';
     return w + 'ing';
   };
   const pastTenseWord = (w) => {
-    if (/e$/i.test(w)) return w + 'd'; // move -> moved
-    if (/[^aeiou]y$/i.test(w)) return w.replace(/y$/i, 'ied'); // carry -> carried
-    if (endsWithCVC(w)) return w + w[w.length - 1] + 'ed'; // stop -> stopped
+    if (/e$/i.test(w)) return w + 'd';
+    if (/[^aeiou]y$/i.test(w)) return w.replace(/y$/i, 'ied');
+    if (endsWithCVC(w)) return w + w[w.length - 1] + 'ed';
     return w + 'ed';
   };
   const ingEdFormsForTerm = (term) => {
@@ -378,7 +371,6 @@ function chooseArticleByGlQuote(glq, strongId, strongPivot, termMap, opts = {}) 
     return Array.from(forms);
   };
 
-  // Irregular verb support: small curated map plus reverse lookup
   const irregularVerbMap = {
     be: ['am', 'is', 'are', 'was', 'were', 'been', 'being', 'be'],
     do: ['did', 'done', 'doing', 'does'],
@@ -444,7 +436,6 @@ function chooseArticleByGlQuote(glq, strongId, strongPivot, termMap, opts = {}) 
     }
     return m;
   })();
-  // Return full-term variants where only the last word is replaced by its irregular forms set
   const irregularFormsForTerm = (term) => {
     const { head, last } = splitHeadLast(term);
     const baseKey = irregularReverse.get(String(last).toLowerCase());
@@ -457,9 +448,7 @@ function chooseArticleByGlQuote(glq, strongId, strongPivot, termMap, opts = {}) 
     return Array.from(acc);
   };
 
-  // Use compromise to get conjugations for potential verbs
   const conjugationsForTerm = (term) => {
-    // mutate only the last word; return full-term variants
     const { head, last } = splitHeadLast(term);
     const forms = new Set();
     if (!useCompromise || !nlp) return Array.from(forms);
@@ -478,10 +467,10 @@ function chooseArticleByGlQuote(glq, strongId, strongPivot, termMap, opts = {}) 
     return Array.from(forms);
   };
 
-  // Compute earliest stage match per article, then choose best stage overall with priority tie-breaker
+  // Find matching articles
   const perArticleMatches = [];
 
-  for (const art of prioritized) {
+  for (const art of articlesList) {
     const terms = termMap.get(art) || [];
     let stage = 0;
     let termHit = '';
@@ -493,7 +482,6 @@ function chooseArticleByGlQuote(glq, strongId, strongPivot, termMap, opts = {}) 
         const termOrig = tobj.orig;
         const alts = new Set([termOrig]);
         for (const a of pluralizeTerm(termOrig)) alts.add(a);
-        // add irregular forms for last word; and conjugations when enabled
         for (const a of irregularFormsForTerm(termOrig)) alts.add(a);
         for (const a of conjugationsForTerm(termOrig)) alts.add(a);
         for (const alt of alts) {
@@ -518,67 +506,100 @@ function chooseArticleByGlQuote(glq, strongId, strongPivot, termMap, opts = {}) 
         if (stage === 2) break;
       }
     }
-    // Stage 3: case-sensitive, substring (no word-boundary)
+    // Stage 3: case-sensitive, substring matching at word boundaries or after dashes
     if (stage === 0) {
       for (const tobj of terms) {
         const termOrig = tobj.orig;
-        if (termOrig && textOrig.includes(termOrig)) { stage = 3; termHit = termOrig; break; }
+        if (termOrig) {
+          // Match if the term appears:
+          // - At word boundary (beginning or end of string, or after/before whitespace or punctuation)
+          // - After any type of dash (—, –, -)
+          // This regex ensures we don't match inside other words like "fromever" matching "Rome"
+          const re3 = new RegExp(`(?:^|\\b|[—–-])${escapeRegExp(termOrig)}(?=\\b|$|[—–-])`, '');
+          if (re3.test(textOrig)) { stage = 3; termHit = termOrig; break; }
+        }
       }
     }
-    // Stage 4: case-insensitive, substring on derived stripped forms (no iterative truncation),
-    // mutating only the last word for multi-word terms
+    // Stage 4: case-insensitive, substring on derived stripped forms
     if (stage === 0) {
       const strippedForms = (base) => {
         const { head, last } = splitHeadLast(base);
         const prefix = head ? head + ' ' : '';
-        const forms = new Set();
-        const addIf = (s) => {
-          const v = String(s || '').trim().toLowerCase();
-          if (v && v.length >= 3) forms.add(v);
+        const results = [];
+
+        const addIf = (form, isStripped = false) => {
+          const v = String(form || '').trim().toLowerCase();
+          if (v && v.length >= 3) {
+            results.push({ form: v, isStripped });
+          }
         };
+
         const addFromLast = (w) => {
           const lw = String(w || '').toLowerCase();
           if (!lw) return;
           const full = prefix + lw;
-          addIf(full);
-          const addVar = (x) => addIf(prefix + x);
-          if (/y$/i.test(lw)) addVar(lw.slice(0, -1));
-          if (/e$/i.test(lw)) addVar(lw.slice(0, -1));
-          if (/ing$/i.test(lw)) addVar(lw.slice(0, -3));
-          if (/ed$/i.test(lw)) addVar(lw.slice(0, -2));
-          if (/es$/i.test(lw)) addVar(lw.slice(0, -2));
-          if (/s$/i.test(lw) && !/ss$/i.test(lw)) addVar(lw.slice(0, -1));
+          addIf(full, false); // Always add the full form
+
+          // Add stripped variants, marking them as stripped
+          if (/y$/i.test(lw)) addIf(prefix + lw.slice(0, -1), true);
+          if (/e$/i.test(lw)) addIf(prefix + lw.slice(0, -1), true);
+          if (/ing$/i.test(lw)) addIf(prefix + lw.slice(0, -3), true);
+          if (/ed$/i.test(lw)) addIf(prefix + lw.slice(0, -2), true);
+          if (/es$/i.test(lw)) addIf(prefix + lw.slice(0, -2), true);
+          if (/s$/i.test(lw) && !/ss$/i.test(lw)) addIf(prefix + lw.slice(0, -1), true);
         };
+
         const addYEOnlyFromLast = (w) => {
           const lw = String(w || '').toLowerCase();
           if (!lw) return;
           const full = prefix + lw;
-          addIf(full);
-          const addVar = (x) => addIf(prefix + x);
-          if (/y$/i.test(lw)) addVar(lw.slice(0, -1));
-          if (/e$/i.test(lw)) addVar(lw.slice(0, -1));
+          addIf(full, false); // Always add the full form
+
+          // Add Y/E stripped variants, marking them as stripped
+          if (/y$/i.test(lw)) addIf(prefix + lw.slice(0, -1), true);
+          if (/e$/i.test(lw)) addIf(prefix + lw.slice(0, -1), true);
         };
-        // base last word and its stripped variants
+
         addFromLast(last);
-        // For conjugations/irregulars of the last word, only drop final y/e
         for (const x of conjugationsForTerm(base)) {
           const { head: h2, last: l2 } = splitHeadLast(x);
-          // ensure we only consider variants that kept the same head
           if ((h2 || '') === (head || '')) addYEOnlyFromLast(l2);
         }
         for (const x of irregularFormsForTerm(base)) {
           const { head: h2, last: l2 } = splitHeadLast(x);
           if ((h2 || '') === (head || '')) addYEOnlyFromLast(l2);
         }
-        return Array.from(forms);
+        return results;
       };
+
       outerStrip:
       for (const tobj of terms) {
         const termOrig = tobj.orig;
-        const forms = strippedForms(termOrig);
-        for (const f of forms) {
-          if (!f) continue;
-          if (textLower.includes(f)) { stage = 4; termHit = termOrig; truncated = false; break outerStrip; }
+        const formResults = strippedForms(termOrig);
+
+        for (const { form, isStripped } of formResults) {
+          if (!form) continue;
+
+          if (isStripped) {
+            // For stripped forms, we need to be more careful about matching
+            // Only match if the stripped form is followed by a grammatical ending
+            const regex = new RegExp(escapeRegExp(form) + '(ed|ing|er|est|es|ies|s|d|n|t)\\b', 'i');
+            if (regex.test(textLower)) {
+              stage = 4;
+              termHit = termOrig;
+              truncated = false;
+              break outerStrip;
+            }
+          } else {
+            // For non-stripped forms, match at word boundaries or after dashes (case-insensitive)
+            const regex4 = new RegExp(`(?:^|\\b|[—–-])${escapeRegExp(form)}(?=\\b|$|[—–-])`, 'i');
+            if (regex4.test(textOrig)) {
+              stage = 4;
+              termHit = termOrig;
+              truncated = false;
+              break outerStrip;
+            }
+          }
         }
       }
     }
@@ -588,18 +609,37 @@ function chooseArticleByGlQuote(glq, strongId, strongPivot, termMap, opts = {}) 
     }
   }
 
-  if (!perArticleMatches.length) return null;
+  return perArticleMatches;
+}
 
-  // Determine best stage among all matches
-  const bestStage = Math.min(...perArticleMatches.map(m => m.stage));
-  const bestMatches = perArticleMatches.filter(m => m.stage === bestStage);
+function chooseArticleByGlQuote(glq, strongId, strongPivot, termMap, opts = {}) {
+  const useCompromise = !!opts.useCompromise;
+  const nlp = opts.nlp;
+  const prioritized = prioritizeArticles(glq, strongId, strongPivot);
+  if (!prioritized.length) return null;
+  const textOrig = String(glq || '');
+  const textLower = textOrig.toLowerCase();
+  const escapeRegExp = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  // Find matches among prioritized articles (those with matching Strong's numbers) for TWLink selection
+  const prioritizedMatches = findMatchingArticles(glq, prioritized, termMap, { useCompromise, nlp });
+
+  if (!prioritizedMatches.length) return null;
+
+  // Determine best stage among prioritized matches for TWLink selection
+  const bestStage = Math.min(...prioritizedMatches.map(m => m.stage));
+  const bestMatches = prioritizedMatches.filter(m => m.stage === bestStage);
   // Among best matches, pick the one that appears earliest in prioritized list
   const artIndex = new Map(prioritized.map((a, i) => [a, i]));
   bestMatches.sort((a, b) => artIndex.get(a.art) - artIndex.get(b.art));
   const chosenMatch = bestMatches[0];
 
-  // Disambiguation: list all matched articles
-  const matchesList = perArticleMatches.map(m => m.art);
+  // For disambiguation, search ALL articles in termMap, not just those with matching Strong's
+  const allArticles = Array.from(termMap.keys());
+  const allMatches = findMatchingArticles(glq, allArticles, termMap, { useCompromise, nlp });
+
+  // Disambiguation: list all matched articles (from all articles, not just Strong's filtered)
+  const matchesList = allMatches.map(m => m.art);
   const disamb = matchesList.length > 1 ? `(${matchesList.join(', ')})` : '';
 
   const isVariant = (chosenMatch.stage >= 3) || chosenMatch.truncated;
@@ -608,6 +648,158 @@ function chooseArticleByGlQuote(glq, strongId, strongPivot, termMap, opts = {}) 
   // article matches on word-boundaries case-insensitively, then do NOT mark as variant.
   if (variantTerm) {
     const termObjs = termMap.get(chosenMatch.art) || [];
+
+    // Helper functions needed for variant checking
+    const pluralizeTerm = (term) => {
+      const out = new Set();
+      const add = (s) => { const v = s.trim(); if (v) out.add(v); };
+      const irregular = {
+        man: 'men', woman: 'women', person: 'people', child: 'children',
+        foot: 'feet', tooth: 'teeth', goose: 'geese', mouse: 'mice', ox: 'oxen',
+      };
+      const pluralizeWord = (w) => {
+        const lw = w.toLowerCase();
+        if (irregular[lw]) return irregular[lw];
+        if (/[^aeiou]y$/i.test(w)) return w.replace(/y$/i, 'ies');
+        if (/(s|x|z|ch|sh)$/i.test(w)) return w + 'es';
+        if (/f$/i.test(w) && !/(roof|belief|chief|proof)$/i.test(w)) return w.replace(/f$/i, 'ves');
+        if (/fe$/i.test(w)) return w.replace(/fe$/i, 'ves');
+        if (/o$/i.test(w)) return w + 'es';
+        return w + 's';
+      };
+      const parts = term.split(/\s+/);
+      if (parts.length === 1) {
+        add(pluralizeWord(term));
+      } else {
+        const last = parts.pop();
+        const pl = pluralizeWord(last);
+        add([...parts, pl].join(' '));
+      }
+      add(term + 's');
+      return Array.from(out);
+    };
+
+    const splitHeadLast = (term) => {
+      const parts = String(term || '').trim().split(/\s+/);
+      if (parts.length <= 1) return { head: '', last: parts[0] || '' };
+      const last = parts.pop();
+      return { head: parts.join(' '), last };
+    };
+
+    const isVowel = (ch) => /[aeiou]/i.test(ch);
+    const isConsonant = (ch) => /[a-z]/i.test(ch) && !isVowel(ch);
+    const endsWithCVC = (w) => {
+      if (w.length < 3) return false;
+      const a = w[w.length - 3], b = w[w.length - 2], c = w[w.length - 1];
+      if (!isConsonant(a) || !isVowel(b) || !isConsonant(c)) return false;
+      if (/[wxy]/i.test(c)) return false;
+      return true;
+    };
+    const presentParticipleWord = (w) => {
+      if (/ie$/i.test(w)) return w.replace(/ie$/i, 'ying');
+      if (/ee$/i.test(w)) return w + 'ing';
+      if (/e$/i.test(w)) return w.replace(/e$/i, 'ing');
+      if (endsWithCVC(w)) return w + w[w.length - 1] + 'ing';
+      return w + 'ing';
+    };
+    const pastTenseWord = (w) => {
+      if (/e$/i.test(w)) return w + 'd';
+      if (/[^aeiou]y$/i.test(w)) return w.replace(/y$/i, 'ied');
+      if (endsWithCVC(w)) return w + w[w.length - 1] + 'ed';
+      return w + 'ed';
+    };
+    const ingEdFormsForTerm = (term) => {
+      const forms = new Set();
+      const parts = term.split(/\s+/);
+      if (parts.length === 1) {
+        forms.add(presentParticipleWord(term));
+        forms.add(pastTenseWord(term));
+      } else {
+        const last = parts.pop();
+        const base = parts.join(' ');
+        forms.add((base ? base + ' ' : '') + presentParticipleWord(last));
+        forms.add((base ? base + ' ' : '') + pastTenseWord(last));
+      }
+      return Array.from(forms);
+    };
+
+    const irregularVerbMap = {
+      be: ['am', 'is', 'are', 'was', 'were', 'been', 'being', 'be'],
+      do: ['did', 'done', 'doing', 'does'],
+      go: ['went', 'gone', 'going', 'goes'],
+      have: ['had', 'having', 'has'],
+      say: ['said', 'saying', 'says'],
+      see: ['saw', 'seen', 'seeing', 'sees'],
+      get: ['got', 'gotten', 'getting', 'gets'],
+      make: ['made', 'making', 'makes'],
+      take: ['took', 'taken', 'taking', 'takes'],
+      come: ['came', 'coming', 'comes'],
+      know: ['knew', 'known', 'knowing', 'knows'],
+      give: ['gave', 'given', 'giving', 'gives'],
+      find: ['found', 'finding', 'finds'],
+      think: ['thought', 'thinking', 'thinks'],
+      tell: ['told', 'telling', 'tells'],
+      become: ['became', 'become', 'becoming', 'becomes'],
+      show: ['showed', 'shown', 'showing', 'shows'],
+      leave: ['left', 'leaving', 'leaves'],
+      feel: ['felt', 'feeling', 'feels'],
+      put: ['put', 'putting', 'puts'],
+      bring: ['brought', 'bringing', 'brings'],
+      begin: ['began', 'begun', 'beginning', 'begins'],
+      keep: ['kept', 'keeping', 'keeps'],
+      hold: ['held', 'holding', 'holds'],
+      write: ['wrote', 'written', 'writing', 'writes'],
+      stand: ['stood', 'standing', 'stands'],
+      hear: ['heard', 'hearing', 'hears'],
+      let: ['let', 'letting', 'lets'],
+      mean: ['meant', 'meaning', 'means'],
+      set: ['set', 'setting', 'sets'],
+      meet: ['met', 'meeting', 'meets'],
+      run: ['ran', 'running', 'runs'],
+      pay: ['paid', 'paying', 'pays'],
+      sit: ['sat', 'sitting', 'sits'],
+      speak: ['spoke', 'spoken', 'speaking', 'speaks'],
+      lie: ['lay', 'lain', 'lying', 'lies'],
+      lead: ['led', 'leading', 'leads'],
+      read: ['read', 'reading', 'reads'],
+      grow: ['grew', 'grown', 'growing', 'grows'],
+      fall: ['fell', 'fallen', 'falling', 'falls'],
+      send: ['sent', 'sending', 'sends'],
+      build: ['built', 'building', 'builds'],
+      understand: ['understood', 'understanding', 'understands'],
+      draw: ['drew', 'drawn', 'drawing', 'draws'],
+      break: ['broke', 'broken', 'breaking', 'breaks'],
+      spend: ['spent', 'spending', 'spends'],
+      cut: ['cut', 'cutting', 'cuts'],
+      rise: ['rose', 'risen', 'rising', 'rises'],
+      drive: ['drove', 'driven', 'driving', 'drives'],
+      buy: ['bought', 'buying', 'buys'],
+      wear: ['wore', 'worn', 'wearing', 'wears'],
+      swear: ['swore', 'sworn', 'swearing', 'swears'],
+      drink: ['drank', 'drunk', 'drinking', 'drinks'],
+      eat: ['ate', 'eaten', 'eating', 'eats'],
+      choose: ['chose', 'chosen', 'choosing', 'chooses'],
+    };
+    const irregularReverse = (() => {
+      const m = new Map();
+      for (const [base, forms] of Object.entries(irregularVerbMap)) {
+        m.set(base.toLowerCase(), base);
+        for (const f of forms) m.set(String(f).toLowerCase(), base);
+      }
+      return m;
+    })();
+    const irregularFormsForTerm = (term) => {
+      const { head, last } = splitHeadLast(term);
+      const baseKey = irregularReverse.get(String(last).toLowerCase());
+      const acc = new Set();
+      if (baseKey) {
+        const prefix = head ? head + ' ' : '';
+        acc.add(prefix + baseKey);
+        for (const f of irregularVerbMap[baseKey] || []) acc.add(prefix + f);
+      }
+      return Array.from(acc);
+    };
+
     const hasWordBoundMatch = termObjs.some(tobj => {
       const termOrig = tobj.orig;
       if (!termOrig) return false;
