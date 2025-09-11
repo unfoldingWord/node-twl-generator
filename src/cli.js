@@ -63,7 +63,12 @@ async function main() {
     console.log(`Wrote ${out}`);
     const dir = path.dirname(outPath);
     const base = path.basename(outPath);
-    const nmPath = path.join(dir, base.replace(/\.twl\.tsv$/i, '.no-match.twl.tsv'));
+    // Derive a sensible no-match filename when --out doesn't follow *.twl.tsv
+    let nmFile;
+    if (/\.twl\.tsv$/i.test(base)) nmFile = base.replace(/\.twl\.tsv$/i, '.no-match.twl.tsv');
+    else if (/\.tsv$/i.test(base)) nmFile = base.replace(/\.tsv$/i, '.no-match.twl.tsv');
+    else nmFile = base + '.no-match.twl.tsv';
+    const nmPath = path.join(dir, nmFile);
     await fs.writeFile(nmPath, noMatchTsv, 'utf8');
     console.log(`Wrote ${nmPath}`);
   } else if (outDir) {

@@ -160,16 +160,86 @@ class PrefixTrie {
       if (node._terms) {
         const matchLength = currentPos - startPos;
         // Always extract from the original text to preserve case
-        const originalMatchedText = originalText.substring(startPos, currentPos);
+        let originalMatchedText = originalText.substring(startPos, currentPos);
+
+        // Extend match backwards to include dash-connected words and possessive forms
+        let extendedStartPos = startPos;
+
+        // Check backwards for dash preceded by word characters (no space between)
+        if (extendedStartPos > 0 && originalText[extendedStartPos - 1] === '-') {
+          let dashPos = extendedStartPos - 1;
+          dashPos--; // Move before the dash
+          // Check if there are word characters immediately before the dash
+          if (dashPos >= 0 && /[\w]/.test(originalText[dashPos])) {
+            // Find the start of the word before the dash
+            while (dashPos >= 0 && /[\w]/.test(originalText[dashPos])) {
+              dashPos--;
+            }
+            extendedStartPos = dashPos + 1;
+          }
+        }
+
+        // Check backwards for apostrophe (straight or curly) preceded by text
+        if (extendedStartPos > 0 && /['']/.test(originalText[extendedStartPos - 1])) {
+          let apostrophePos = extendedStartPos - 1;
+          apostrophePos--; // Move before the apostrophe
+          // Check if there are word characters immediately before the apostrophe
+          if (apostrophePos >= 0 && /[\w]/.test(originalText[apostrophePos])) {
+            // Find the start of the text before the apostrophe
+            while (apostrophePos >= 0 && /[\w]/.test(originalText[apostrophePos])) {
+              apostrophePos--;
+            }
+            extendedStartPos = apostrophePos + 1;
+          }
+        }
+
+        // Extend match forwards to include dash-connected words and possessive forms
+        let extendedEndPos = currentPos;
+
+        // Check for dash followed by word characters (no space between)
+        if (extendedEndPos < originalText.length && originalText[extendedEndPos] === '-') {
+          let dashPos = extendedEndPos;
+          dashPos++; // Move past the dash
+          // Check if there are word characters immediately after the dash
+          if (dashPos < originalText.length && /[\w]/.test(originalText[dashPos])) {
+            // Find the end of the word after the dash
+            while (dashPos < originalText.length && /[\w]/.test(originalText[dashPos])) {
+              dashPos++;
+            }
+            extendedEndPos = dashPos;
+          }
+        }
+
+        // Check for apostrophe (straight or curly) followed by text
+        if (extendedEndPos < originalText.length && /['']/.test(originalText[extendedEndPos])) {
+          let apostrophePos = extendedEndPos;
+          apostrophePos++; // Move past the apostrophe
+          // Check if there are word characters immediately after the apostrophe
+          if (apostrophePos < originalText.length && /[\w]/.test(originalText[apostrophePos])) {
+            // Find the end of the text after the apostrophe
+            while (apostrophePos < originalText.length && /[\w]/.test(originalText[apostrophePos])) {
+              apostrophePos++;
+            }
+            extendedEndPos = apostrophePos;
+          } else {
+            // Include the apostrophe even if no text follows (for possessives ending in s)
+            extendedEndPos = apostrophePos;
+          }
+        }
+
+        // Update the matched text if we extended it
+        if (extendedStartPos < startPos || extendedEndPos > currentPos) {
+          originalMatchedText = originalText.substring(extendedStartPos, extendedEndPos);
+        }
 
         // Check if this is a valid word boundary match (both start and end)
-        const isStartBoundary = startPos === 0 ||
-          /[\s\p{P}]/.test(originalText[startPos - 1]) ||
-          !/[\w]/.test(originalText[startPos - 1]);
+        const isStartBoundary = extendedStartPos === 0 ||
+          /[\s\p{P}]/.test(originalText[extendedStartPos - 1]) ||
+          !/[\w]/.test(originalText[extendedStartPos - 1]);
 
-        const isEndBoundary = currentPos >= originalText.length ||
-          /[\s\p{P}]/.test(originalText[currentPos]) ||
-          !/[\w]/.test(originalText[currentPos]);
+        const isEndBoundary = extendedEndPos >= originalText.length ||
+          /[\s\p{P}]/.test(originalText[extendedEndPos]) ||
+          !/[\w]/.test(originalText[extendedEndPos]);
 
         const isWordBoundary = isStartBoundary && isEndBoundary;
 
@@ -178,8 +248,9 @@ class PrefixTrie {
             matches.push({
               term: termData.term,
               articles: termData.articles,
-              matchedText: originalMatchedText, // Use the original text, not the normalized version
-              length: matchLength,
+              matchedText: originalMatchedText, // Use the extended matched text
+              length: originalMatchedText.length, // Use extended length
+              originalLength: matchLength, // Keep track of original match length for advancement
               priority: termData.priority,
               isExactCase: isExactCase
             });
@@ -283,9 +354,11 @@ function findMatches(verseText, termTrie) {
         priority: bestMatch.priority
       });
 
-      // Move past the matched text
-      processedText += matchedText;
-      currentPos += bestMatch.length;
+      // Move past only the original matched text (not the extended part)
+      // This allows finding additional matches within the extended portion
+      const advanceBy = bestMatch.originalLength || bestMatch.length;
+      processedText += normalizedText.substring(currentPos, currentPos + advanceBy);
+      currentPos += advanceBy;
     } else {
       // No match found, move to next character/word boundary
       const nextWordBoundary = normalizedText.substring(currentPos).search(/[\s\p{P}]/u);
@@ -426,4 +499,13 @@ export function generateTWLMatches(twTerms, verses) {
   }
 
   return tsvRows.join('\n');
+}
+
+// Expose lightweight building and scanning APIs for reuse
+export function buildTermTrie(twTerms) {
+  return createOptimizedTermMap(twTerms);
+}
+
+export function scanVerseMatches(verseText, termTrie) {
+  return findMatches(verseText, termTrie);
 }

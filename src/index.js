@@ -863,79 +863,37 @@ function chooseArticleByGlQuote(glq, strongId, strongPivot, termMap, twMap, opts
 }
 
 export async function generateTwlByBook(bookCode, options = {}) {
-  // Import Node-specific modules conditionally
-  const { addGLQuoteCols, convertGLQuotes2OLQuotes } = await import('tsv-quote-converters');
-
-  const useCompromise = !!options.useCompromise;
-  let nlp = null;
-  if (useCompromise) {
-    const mod = await import('compromise');
-    nlp = mod.default || mod;
+  // New: English-first matching (no Strong's), using ULT USFM verses
+  // Build term -> [articles] from local tw_strongs_list.json (terms only; ignore Strong's)
+  const twJson = await loadTwJsonLocal();
+  const termToArticles = {};
+  for (const [article, val] of Object.entries(twJson)) {
+    const terms = (val && val.article && Array.isArray(val.article.terms)) ? val.article.terms : [];
+    for (const raw of terms) {
+      const term = String(raw || '').replace(/\s*\([^)]*\)\s*$/, '').trim();
+      if (!term) continue;
+      if (!termToArticles[term]) termToArticles[term] = [];
+      // Use slug as-is (e.g., kt/grace)
+      termToArticles[term].push(article);
+    }
   }
+
+  // Build trie for fast scanning
+  const { buildTermTrie, scanVerseMatches } = await import('./utils/twl-matcher.js');
+  const trie = buildTermTrie(termToArticles);
+
+  // Fetch and parse ULT USFM into verses
+  const { processUsfmForBook } = await import('./utils/usfm-alignment-remover.js');
   const bibleData = await readBooks();
   const meta = findBookMeta(bibleData, bookCode);
   if (!meta) throw new Error(`Unknown book code: ${bookCode}`);
-  const usfm = await fetchUsfm(meta.usfm, meta.testament);
-  const twJson = await loadTwJsonLocal();
-  const strongPivot = pivotByStrong(twJson);
+  const versesByChapter = await processUsfmForBook(meta.key);
 
-  // 1) initial TSV
-  const baseTsv = buildInitialTsv(usfm, strongPivot, meta.key);
+  // Header without Strongs; keep GLQuote/GLOccurrence and add Variant of, Disambiguation
+  const header = ['Reference', 'ID', 'Tags', 'OrigWords', 'Occurrence', 'TWLink', 'GLQuote', 'GLOccurrence', 'Variant of', 'Disambiguation'];
+  const outRows = [header.join('\t')];
 
-  // 2) add GLQuote and GLOccurrence
-  const glRes = await addGLQuoteCols({
-    bibleLinks: ["unfoldingWord/en_ult/master"],
-    bookCode: meta.key,
-    tsvContent: baseTsv,
-    trySeparatorsAndOccurrences: true,
-  });
-  const withGl = glRes.output;
-
-  // 3) Convert GLQuote/GLOccurrence into OrigWords/Occurrence and convert to OL quotes BEFORE matching
-  const lines0 = withGl.split(/\r?\n/);
-  const header0 = lines0.shift();
-  const h0 = header0.split('\t');
-  const I0 = {
-    Reference: h0.indexOf('Reference'),
-    ID: h0.indexOf('ID'),
-    Tags: h0.indexOf('Tags'),
-    OrigWords: h0.indexOf('OrigWords'),
-    Occurrence: h0.indexOf('Occurrence'),
-    TWLink: h0.indexOf('TWLink'),
-    GLQuote: h0.indexOf('GLQuote'),
-    GLOccurrence: h0.indexOf('GLOccurrence'),
-  };
-  const rebuilt0 = [header0].concat(lines0.filter(Boolean).map(row => {
-    const c = row.split('\t');
-    const newCols = c.slice();
-    if (I0.GLQuote >= 0) newCols[I0.OrigWords] = c[I0.GLQuote];
-    if (I0.GLOccurrence >= 0) newCols[I0.Occurrence] = c[I0.GLOccurrence];
-    return newCols.join('\t');
-  })).join('\n');
-  const convEarly = await convertGLQuotes2OLQuotes({
-    bibleLinks: ["unfoldingWord/en_ult/master"],
-    bookCode: meta.key,
-    tsvContent: rebuilt0,
-    trySeparatorsAndOccurrences: true,
-  });
-
-  // 4) Reorder columns and add Strongs + randomized 4-char IDs before matching
-  const linesA = convEarly.output.split(/\r?\n/);
-  const headerA = linesA.shift();
-  const aCols = headerA.split('\t');
-  const A = {
-    Reference: aCols.indexOf('Reference'),
-    ID: aCols.indexOf('ID'),
-    Tags: aCols.indexOf('Tags'),
-    OrigWords: aCols.indexOf('OrigWords'),
-    Occurrence: aCols.indexOf('Occurrence'),
-    TWLink: aCols.indexOf('TWLink'),
-    GLQuote: aCols.indexOf('GLQuote'),
-    GLOccurrence: aCols.indexOf('GLOccurrence'),
-  };
-
-  // New header order: Reference, ID, Tags, OrigWords, Occurrence, TWLink, Strongs, GLQuote, GLOccurrence
-  const finalHeaderBase = ['Reference', 'ID', 'Tags', 'OrigWords', 'Occurrence', 'TWLink', 'GLQuote', 'GLOccurrence', 'Strongs'];
+  // ID generator
   const usedIds = new Set();
   const genId = () => {
     const letters = 'abcdefghijklmnopqrstuvwxyz';
@@ -949,86 +907,100 @@ export async function generateTwlByBook(bookCode, options = {}) {
     }
   };
 
-  const preparedRows = [];
-  for (const ln of linesA) {
-    if (!ln.trim()) continue;
-    const c = ln.split('\t');
-    if (c.length < 7) continue;
-    const strongsVal = c[A.ID];
-    const newId = genId();
-    const newRow = [
-      c[A.Reference],
-      newId,
-      c[A.Tags],
-      c[A.OrigWords],
-      c[A.Occurrence],
-      c[A.TWLink],
-      c[A.GLQuote],
-      c[A.GLOccurrence],
-      strongsVal,
-    ];
-    preparedRows.push(newRow);
-  }
+  // Helpers for Variant of decision (allow only plural/-ed/-ing without marking variant)
+  const pluralizeWord = (w) => {
+    if (/[^aeiou]y$/i.test(w)) return w.replace(/y$/i, 'ies');
+    if (/(s|x|z|ch|sh)$/i.test(w)) return w + 'es';
+    if (/f$/i.test(w) && !/(roof|belief|chief|proof)$/i.test(w)) return w.replace(/f$/i, 'ves');
+    if (/fe$/i.test(w)) return w.replace(/fe$/i, 'ves');
+    if (/o$/i.test(w)) return w + 'es';
+    return w + 's';
+  };
+  const isVowel = (ch) => /[aeiou]/i.test(ch);
+  const isConsonant = (ch) => /[a-z]/i.test(ch) && !isVowel(ch);
+  const endsWithCVC = (w) => w.length >= 3 && isConsonant(w[w.length - 3]) && isVowel(w[w.length - 2]) && isConsonant(w[w.length - 1]) && !/[wxy]/i.test(w[w.length - 1]);
+  const edForm = (w) => (/e$/i.test(w) ? w + 'd' : (/[^aeiou]y$/i.test(w) ? w.replace(/y$/i, 'ied') : (endsWithCVC(w) ? w + w[w.length - 1] + 'ed' : w + 'ed')));
+  const ingForm = (w) => (/ie$/i.test(w) ? w.replace(/ie$/i, 'ying') : (/ee$/i.test(w) ? w + 'ing' : (/e$/i.test(w) ? w.replace(/e$/i, 'ing') : (endsWithCVC(w) ? w + w[w.length - 1] + 'ing' : w + 'ing'))));
 
-  // Indexes for prepared rows
-  const H = {
-    Reference: 0,
-    ID: 1,
-    Tags: 2,
-    OrigWords: 3,
-    Occurrence: 4,
-    TWLink: 5,
-    GLQuote: 6,
-    GLOccurrence: 7,
-    Strongs: 8,
+  const allowNoVariant = (base, match) => {
+    const b = String(base || '');
+    const m = String(match || '');
+    if (!b || !m) return true;
+    if (b.toLowerCase() === m.toLowerCase()) return true;
+    const parts = b.trim().split(/\s+/);
+    const head = parts.length > 1 ? parts.slice(0, -1).join(' ') + ' ' : '';
+    const last = parts[parts.length - 1];
+    const allowed = new Set([
+      head + pluralizeWord(last),
+      head + edForm(last),
+      head + ingForm(last),
+    ].map(x => x.toLowerCase()));
+    return allowed.has(m.toLowerCase());
   };
 
-  // 5) pick best TWLink based on GLQuote terms using Strongs column; include Variant of column
-  const termMap = buildArticleTermMap(twJson);
-  const outRows = [finalHeaderBase.concat(['Variant of', 'Disambiguation']).join('\t')];
-  const noMatchRows = [finalHeaderBase.concat(['Disambiguation']).join('\t')];
-  let totalRows = 0;
-  let droppedRows = 0;
-  let multiDisambRows = 0;
-  const noMatchSamples = [];
+  // Walk through verses in order
+  const chapterNums = Object.keys(versesByChapter).map(n => parseInt(n, 10)).sort((a, b) => a - b);
+  for (const c of chapterNums) {
+    const verses = versesByChapter[c] || {};
+    const verseNums = Object.keys(verses).map(n => parseInt(n, 10)).sort((a, b) => a - b);
+    for (const v of verseNums) {
+      const text = verses[v] || '';
+      const matches = scanVerseMatches(text, trie);
+      // Count occurrences per exact matchedText (case-sensitive)
+      const occMap = new Map();
+      for (const m of matches) {
+        const glq = m.matchedText;
+        const occ = (occMap.get(glq) || 0) + 1;
+        occMap.set(glq, occ);
 
-  for (const cols of preparedRows) {
-    totalRows++;
-    const strongId = cols[H.Strongs];
-    const glq = cols[H.GLQuote] || '';
-    const result = chooseArticleByGlQuote(glq, strongId, strongPivot, termMap, twJson, { useCompromise, nlp });
-    if (!result) {
-      droppedRows++;
-      if (noMatchSamples.length < 8) {
-        const ref = cols[H.Reference] || '';
-        noMatchSamples.push(`${ref}\t${strongId}\t${glq}`);
+        const ref = `${c}:${v}`;
+        const id = genId();
+        const primaryArticle = (m.articles && m.articles[0]) || '';
+        let tag = '';
+        if (primaryArticle.startsWith('kt/')) tag = 'keyterm';
+        else if (primaryArticle.startsWith('names/')) tag = 'name';
+        const twLink = primaryArticle ? `rc://*/tw/dict/bible/${primaryArticle}` : '';
+
+        // Variant of: only if beyond plural/-ed/-ing differences
+        const variantOf = allowNoVariant(m.term, glq) ? '' : m.term;
+        // Disambiguation: list all candidate articles for this match
+        const disamb = (m.articles && m.articles.length > 1) ? `(${m.articles.join(', ')})` : '';
+
+        // Set OrigWords/Occurrence equal to GLQuote/GLOccurrence for English-first output
+        outRows.push([
+          ref,
+          id,
+          tag,
+          glq,
+          String(occ),
+          twLink,
+          glq,
+          String(occ),
+          variantOf,
+          disamb,
+        ].join('\t'));
       }
-      const tried = prioritizeArticles(glq, strongId, strongPivot) || [];
-      const disambTried = tried.length ? `(${tried.join(', ')})` : '';
-      noMatchRows.push(cols.join('\t') + '\t' + disambTried);
-      continue;
     }
-    const art = result.article;
-    cols[H.TWLink] = `rc://*/tw/dict/bible/${art}`;
-    // Update Tags based on selected article prefix
-    let tag = '';
-    if (art.startsWith('kt/')) tag = 'keyterm';
-    else if (art.startsWith('names/')) tag = 'name';
-    cols[H.Tags] = tag;
-    if (result.disamb) multiDisambRows++;
-    const variantOf = result.variantTerm || '';
-    outRows.push(cols.join('\t') + '\t' + variantOf + '\t' + (result.disamb || ''));
   }
 
-  const keptRows = totalRows - droppedRows;
-  const pct = totalRows ? ((keptRows / totalRows) * 100).toFixed(1) : '0.0';
-  console.log(`[TWL] ${bookCode.toUpperCase()}: kept ${keptRows}/${totalRows} (${pct}%), dropped ${droppedRows}, disambiguated ${multiDisambRows}`);
-  if (noMatchSamples.length) {
-    console.log(`[TWL] ${bookCode.toUpperCase()}: no-match samples (up to 8):`);
-    for (const s of noMatchSamples) console.log(`  ${s}`);
+  // Build TSV and convert GL OrigWords back to OL using tsv-quote-converters
+  let matchedTsv = outRows.join('\n');
+  try {
+    const { convertGLQuotes2OLQuotes } = await import('tsv-quote-converters');
+    const conv = await convertGLQuotes2OLQuotes({
+      bibleLinks: ['unfoldingWord/en_ult/master'],
+      bookCode: String(meta.key || bookCode).toLowerCase(),
+      tsvContent: matchedTsv,
+      trySeparatorsAndOccurrences: true,
+      quiet: true,
+    });
+    if (conv && typeof conv.output === 'string' && conv.output.length) {
+      matchedTsv = conv.output;
+    }
+  } catch (e) {
+    // If conversion fails (e.g., no network), fall back to unconverted TSV
   }
-
-  const matchedTsv = outRows.join('\n');
-  const noMatchTsv = noMatchRows.join('\n');
+  const noMatchHeader = ['Reference', 'ID', 'Tags', 'OrigWords', 'Occurrence', 'TWLink', 'GLQuote', 'GLOccurrence', 'Disambiguation'];
+  const noMatchTsv = [noMatchHeader.join('\t')].join('\n');
   return { matchedTsv, noMatchTsv };
 }
