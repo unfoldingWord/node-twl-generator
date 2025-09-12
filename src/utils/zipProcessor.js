@@ -38,7 +38,7 @@ async function processZipBuffer(zipBuffer) {
     const content = await entry.getData(); // Await the async string content
     const firstLine = content.split('\n')[0];
     const terms = firstLine.replace(/^#/, '').trim().split(',').map(t => t.trim()).filter(Boolean);
-    const truncated = entry.entryName.replace('en_tw/bible/', '');
+    const truncated = entry.entryName.replace('en_tw/bible/', '').replace(/\.md$/, '');
 
     for (const term of terms) {
       // Normalize terms by removing parentheses and spaces before them
