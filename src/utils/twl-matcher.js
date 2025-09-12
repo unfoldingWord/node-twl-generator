@@ -295,7 +295,6 @@ function createOptimizedTermMap(twTerms) {
       let variants = new Set([originalTerm]);
       const isName = articles[0].startsWith('names/') || articles[1]?.startsWith('names/')
       variants = generateVariants(originalTerm, isName);
-      console.log(variants)
       for (const variant of variants) {
         if (variant !== originalTerm) {
           trie.insert(variant, originalTerm, articles, false);

@@ -68,13 +68,13 @@ export const removeAllTagsExceptChapterVerse = (usfmContent) => {
  * @param {string} book - The book identifier
  * @return {Promise<Object>} - Object with chapters and verses
  */
-export async function processUsfmForBook(book) {
+export async function processUsfmForBook(book, dcsHost = 'https://git.door43.org') {
   // Normalize book key to lowercase to match BibleBookData keys
   const key = String(book || '').toLowerCase();
   if (!BibleBookData[key]) throw new Error(`Unknown book: ${book}`);
 
   const fetch = await getFetch();
-  const usfmUrl = `https://git.door43.org/api/v1/repos/unfoldingWord/en_ult/contents/${BibleBookData[key].usfm}.usfm?ref=master`;
+  const usfmUrl = `${dcsHost}/api/v1/repos/unfoldingWord/en_ult/contents/${BibleBookData[key].usfm}.usfm?ref=master`;
   const usfmRes = await fetch(usfmUrl);
   if (!usfmRes.ok) throw new Error(`Failed to download USFM file for ${book}`);
   const usfmData = await usfmRes.json();

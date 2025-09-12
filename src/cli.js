@@ -15,7 +15,7 @@ async function readBooksJs() {
 }
 
 function parseArgs(argv) {
-  const args = { book: '', out: '', outDir: '', all: false, useCompromise: false };
+  const args = { book: '', out: '', outDir: '', all: false, useCompromise: false, dcsHost: 'https://git.door43.org' };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--book' || a === '-b') { args.book = argv[++i] || ''; }
@@ -23,21 +23,22 @@ function parseArgs(argv) {
     else if (a === '--out-dir' || a === '-O') { args.outDir = argv[++i] || ''; }
     else if (a === '--all' || a === '-A') { args.all = true; }
     else if (a === '--use-compromise') { args.useCompromise = true; }
+    else if (a === '--dcs') { args.dcsHost = argv[++i] || 'https://git.door43.org'; }
   }
   return args;
 }
 
 async function main() {
-  const { book, out, outDir, all, useCompromise } = parseArgs(process.argv);
+  const { book, out, outDir, all, useCompromise, dcsHost } = parseArgs(process.argv);
   if (all || (book && book.toLowerCase() === 'all')) {
     const books = await readBooksJs();
     const codes = Object.keys(books);
     const destDir = outDir ? path.resolve(outDir) : path.resolve(THIS_DIR, '..'); // default to twl-generator dir
     await fs.mkdir(destDir, { recursive: true });
-    console.error(`Generating TWL for ${codes.length} books to ${destDir} (useCompromise=${useCompromise})`);
+    console.error(`Generating TWL for ${codes.length} books to ${destDir} (useCompromise=${useCompromise}, dcsHost=${dcsHost})`);
     for (const code of codes) {
       try {
-        const { matchedTsv, noMatchTsv } = await generateTwlByBook(code, { useCompromise });
+        const { matchedTsv, noMatchTsv } = await generateTwlByBook(code, { useCompromise, dcsHost });
         const fname = `${code.toLowerCase()}.twl.tsv`;
         const outPath = path.join(destDir, fname);
         await fs.writeFile(outPath, matchedTsv, 'utf8');
@@ -52,11 +53,12 @@ async function main() {
   }
 
   if (!book) {
-    console.error('Usage: generate-twl --book <code>|all [--out <file.tsv> | --out-dir <dir>] [--use-compromise]');
+    console.error('Usage: generate-twl --book <code>|all [--out <file.tsv> | --out-dir <dir>] [--use-compromise] [--dcs <host>]');
+    console.error('  --dcs defaults to https://git.door43.org');
     process.exit(1);
   }
 
-  const { matchedTsv, noMatchTsv } = await generateTwlByBook(book, { useCompromise });
+  const { matchedTsv, noMatchTsv } = await generateTwlByBook(book, { useCompromise, dcsHost });
   if (out) {
     const outPath = path.resolve(out);
     await fs.writeFile(outPath, matchedTsv, 'utf8');

@@ -1,7 +1,6 @@
 import { BibleBookData } from './common/books.js';
 
 const isBrowser = typeof window !== 'undefined';
-const TW_JSON_URL = new URL('../tw_strongs_list.json', import.meta.url);
 
 async function readBooks() {
   // Build a simple CODE -> { usfm, testament } map from the local BibleBookData
@@ -20,29 +19,11 @@ function findBookMeta(bookMap, code) {
   return { key, ...meta };
 }
 
-async function fetchUsfm(usfmCode, testament) {
-  const repo = testament === 'old' ? 'hbo_uhb' : 'el-x-koine_ugnt';
-  const url = `https://git.door43.org/api/v1/repos/unfoldingWord/${repo}/contents/${usfmCode}.usfm`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to fetch USFM: ${res.status} ${res.statusText}`);
-  const json = await res.json();
-  const b64 = json.content || '';
-
-  if (isBrowser) {
-    // Browser: use atob and TextDecoder
-    const binary = atob(b64);
-    const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
-    const decoder = new TextDecoder('utf-8');
-    return decoder.decode(bytes);
-  } else {
-    // Node.js: use Buffer
-    const { Buffer } = await import('node:buffer');
-    const buf = Buffer.from(b64, 'base64');
-    return buf.toString('utf8');
-  }
-}
-
-function pivotByStrong(twMap) {
+async function loadTermsFromEnTw(dcsHost = 'https://git.door43.org') {
+  // Use the updated zipProcessor that accepts dcsHost
+  const { generateTWTerms } = await import('./utils/zipProcessor.js');
+  return await generateTWTerms(dcsHost);
+} function pivotByStrong(twMap) {
   // Build two structures:
   // 1) singles: strong -> Set(articles) including base (strip letter suffix)
   // 2) seqFirst: base-first-strong -> [{ article, seqBase, len }] preserving order in twMap
@@ -208,23 +189,6 @@ function buildInitialTsv(usfm, strongPivot, bookCode) {
   const header = ['Reference', 'ID', 'Tags', 'OrigWords', 'Occurrence', 'TWLink'];
   const tsv = [header.join('\t'), ...rows.map(r => r.join('\t'))].join('\n');
   return tsv;
-}
-
-async function loadTwJsonLocal() {
-  if (isBrowser) {
-    // In browser, try to fetch from public path
-    const url = '/tw_strongs_list.json';
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Failed to fetch tw_strongs_list.json: ${res.status}`);
-    return await res.json();
-  } else {
-    // In Node.js, read from file system
-    const fs = await import('node:fs/promises');
-    const { fileURLToPath } = await import('node:url');
-    const filePath = fileURLToPath(TW_JSON_URL);
-    const raw = await fs.readFile(filePath, 'utf8');
-    return JSON.parse(raw);
-  }
 }
 
 function buildArticleTermMap(twMap) {
@@ -863,20 +827,11 @@ function chooseArticleByGlQuote(glq, strongId, strongPivot, termMap, twMap, opts
 }
 
 export async function generateTwlByBook(bookCode, options = {}) {
-  // New: English-first matching (no Strong's), using ULT USFM verses
-  // Build term -> [articles] from local tw_strongs_list.json (terms only; ignore Strong's)
-  const twJson = await loadTwJsonLocal();
-  const termToArticles = {};
-  for (const [article, val] of Object.entries(twJson)) {
-    const terms = (val && val.article && Array.isArray(val.article.terms)) ? val.article.terms : [];
-    for (const raw of terms) {
-      const term = String(raw || '').replace(/\s*\([^)]*\)\s*$/, '').trim();
-      if (!term) continue;
-      if (!termToArticles[term]) termToArticles[term] = [];
-      // Use slug as-is (e.g., kt/grace)
-      termToArticles[term].push(article);
-    }
-  }
+  // Extract dcsHost option with default
+  const dcsHost = options.dcsHost || 'https://git.door43.org';
+
+  // Load terms from en_tw zip file instead of local tw_strongs_list.json
+  const termToArticles = await loadTermsFromEnTw(dcsHost);
 
   // Build trie for fast scanning
   const { buildTermTrie, scanVerseMatches } = await import('./utils/twl-matcher.js');
@@ -887,7 +842,7 @@ export async function generateTwlByBook(bookCode, options = {}) {
   const bibleData = await readBooks();
   const meta = findBookMeta(bibleData, bookCode);
   if (!meta) throw new Error(`Unknown book code: ${bookCode}`);
-  const versesByChapter = await processUsfmForBook(meta.key);
+  const versesByChapter = await processUsfmForBook(meta.key, dcsHost);
 
   // Header without Strongs; keep GLQuote/GLOccurrence and add Variant of, Disambiguation
   const header = ['Reference', 'ID', 'Tags', 'OrigWords', 'Occurrence', 'TWLink', 'GLQuote', 'GLOccurrence', 'Variant of', 'Disambiguation'];
