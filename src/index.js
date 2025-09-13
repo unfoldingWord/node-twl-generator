@@ -880,7 +880,7 @@ export async function generateTwlByBook(bookCode, options = {}) {
     if (/[^aeiou]y$/i.test(w)) return w.replace(/y$/i, 'ied');
     // Do not double the final consonant for words ending in "er" (e.g., gather -> gathered)
     const lastCh = w[w.length - 1];
-    if (endsWithCVC(w) && !/(?:er|en)$/i.test(w)) return w + lastCh + 'ed';
+    if (endsWithCVC(w) && !/(?:er|en|or|on|al|el)$/i.test(w)) return w + lastCh + 'ed';
     return w + 'ed';
   };
   const ingForm = (w) => {
@@ -888,7 +888,7 @@ export async function generateTwlByBook(bookCode, options = {}) {
     if (/ee$/i.test(w)) return w + 'ing';
     if (/e$/i.test(w)) return w.replace(/e$/i, 'ing');
     const lastCh = w[w.length - 1];
-    if (endsWithCVC(w) && !/(?:er|en)$/i.test(w)) return w + lastCh + 'ing';
+    if (endsWithCVC(w) && !/(?:er|en|or|on|al|el)$/i.test(w)) return w + lastCh + 'ing';
     return w + 'ing';
   };
 
