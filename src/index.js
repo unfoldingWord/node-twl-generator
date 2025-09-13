@@ -1,4 +1,5 @@
 import { BibleBookData } from './common/books.js';
+import { addGLQuoteCols, convertGLQuotes2OLQuotes } from 'tsv-quote-converters';
 
 const isBrowser = typeof window !== 'undefined';
 
@@ -829,6 +830,7 @@ function chooseArticleByGlQuote(glq, strongId, strongPivot, termMap, twMap, opts
 export async function generateTwlByBook(bookCode, options = {}) {
   // Extract dcsHost option with default
   const dcsHost = options.dcsHost || 'https://git.door43.org';
+  const quiet = !!options.quiet;
 
   // Load terms from en_tw zip file instead of local tw_strongs_list.json
   const termToArticles = await loadTermsFromEnTw(dcsHost);
@@ -844,8 +846,7 @@ export async function generateTwlByBook(bookCode, options = {}) {
   if (!meta) throw new Error(`Unknown book code: ${bookCode}`);
   const versesByChapter = await processUsfmForBook(meta.key, dcsHost);
 
-  // Header without Strongs; keep GLQuote/GLOccurrence and add Variant of, Disambiguation
-  const header = ['Reference', 'ID', 'Tags', 'OrigWords', 'Occurrence', 'TWLink', 'GLQuote', 'GLOccurrence', 'Variant of', 'Disambiguation'];
+  const header = ['Reference', 'ID', 'Tags', 'OrigWords', 'Occurrence', 'TWLink', 'Variant of', 'Disambiguation'];
   const outRows = [header.join('\t')];
 
   // ID generator
@@ -874,8 +875,22 @@ export async function generateTwlByBook(bookCode, options = {}) {
   const isVowel = (ch) => /[aeiou]/i.test(ch);
   const isConsonant = (ch) => /[a-z]/i.test(ch) && !isVowel(ch);
   const endsWithCVC = (w) => w.length >= 3 && isConsonant(w[w.length - 3]) && isVowel(w[w.length - 2]) && isConsonant(w[w.length - 1]) && !/[wxy]/i.test(w[w.length - 1]);
-  const edForm = (w) => (/e$/i.test(w) ? w + 'd' : (/[^aeiou]y$/i.test(w) ? w.replace(/y$/i, 'ied') : (endsWithCVC(w) ? w + w[w.length - 1] + 'ed' : w + 'ed')));
-  const ingForm = (w) => (/ie$/i.test(w) ? w.replace(/ie$/i, 'ying') : (/ee$/i.test(w) ? w + 'ing' : (/e$/i.test(w) ? w.replace(/e$/i, 'ing') : (endsWithCVC(w) ? w + w[w.length - 1] + 'ing' : w + 'ing'))));
+  const edForm = (w) => {
+    if (/e$/i.test(w)) return w + 'd';
+    if (/[^aeiou]y$/i.test(w)) return w.replace(/y$/i, 'ied');
+    // Do not double the final consonant for words ending in "er" (e.g., gather -> gathered)
+    const lastCh = w[w.length - 1];
+    if (endsWithCVC(w) && !/(?:er|en)$/i.test(w)) return w + lastCh + 'ed';
+    return w + 'ed';
+  };
+  const ingForm = (w) => {
+    if (/ie$/i.test(w)) return w.replace(/ie$/i, 'ying');
+    if (/ee$/i.test(w)) return w + 'ing';
+    if (/e$/i.test(w)) return w.replace(/e$/i, 'ing');
+    const lastCh = w[w.length - 1];
+    if (endsWithCVC(w) && !/(?:er|en)$/i.test(w)) return w + lastCh + 'ing';
+    return w + 'ing';
+  };
 
   const allowNoVariant = (base, match) => {
     const b = String(base || '');
@@ -929,8 +944,6 @@ export async function generateTwlByBook(bookCode, options = {}) {
           glq,
           String(occ),
           twLink,
-          glq,
-          String(occ),
           variantOf,
           disamb,
         ].join('\t'));
@@ -941,13 +954,12 @@ export async function generateTwlByBook(bookCode, options = {}) {
   // Build TSV and convert GL OrigWords back to OL using tsv-quote-converters
   let matchedTsv = outRows.join('\n');
   try {
-    const { convertGLQuotes2OLQuotes } = await import('tsv-quote-converters');
     const conv = await convertGLQuotes2OLQuotes({
-      bibleLinks: ['unfoldingWord/en_ult/master'],
+      bibleLink: 'unfoldingWord/en_ult/master',
       bookCode: String(meta.key || bookCode).toLowerCase(),
       tsvContent: matchedTsv,
       trySeparatorsAndOccurrences: true,
-      quiet: true,
+      quiet,
     });
     if (conv && typeof conv.output === 'string' && conv.output.length) {
       matchedTsv = conv.output;
@@ -955,6 +967,68 @@ export async function generateTwlByBook(bookCode, options = {}) {
   } catch (e) {
     // If conversion fails (e.g., no network), fall back to unconverted TSV
   }
+
+  // Now add the actual GLQuote/GLOccurrence by calling addGLQuoteCols
+  try {
+    const result = await addGLQuoteCols({
+      bibleLinks: ['unfoldingWord/en_ult/master'],
+      bookCode: String(meta.key || bookCode).toLowerCase(),
+      tsvContent: matchedTsv,
+      trySeparatorsAndOccurrences: true,
+      usePreviousGLQuotes: true,
+      quiet,
+    });
+    if (result && typeof result.output === 'string' && result.output.length) {
+      matchedTsv = result.output;
+      // Reorder columns: move cols[5] and cols[6] to after cols[7] for every line
+      try {
+        const lines = String(matchedTsv || '').split('\n');
+        for (let i = 0; i < lines.length; i++) {
+          const cols = lines[i].split('\t');
+          // require at least 8 columns so cols[7] exists
+          if (cols.length >= 8) {
+            const removed = cols.splice(5, 2); // remove cols[5] and cols[6]
+            // after removal, original cols[7] is at index 5, so insert after it at index 6
+            const insertIndex = Math.min(6, cols.length);
+            cols.splice(insertIndex, 0, ...removed);
+            lines[i] = cols.join('\t');
+          }
+        }
+        matchedTsv = lines.join('\n');
+      } catch (err) {
+        // leave matchedTsv unchanged on error
+      }
+    }
+  } catch (e) {
+    try {
+      const lines = String(matchedTsv || '').split('\n');
+      if (lines.length > 0) {
+        lines[0] = ['Reference', 'ID', 'Tags', 'OrigWords', 'Occurrence', 'TWLink', 'GLQuote', 'GLOccurrence', 'Variant of', 'Disambiguation'].join('\t');
+        const out = [lines[0]];
+        for (let i = 1; i < lines.length; i++) {
+          const cols = lines[i].split('\t');
+          const g = (idx) => (cols[idx] !== undefined ? cols[idx] : '');
+          const newRow = [
+            g(0), // Reference
+            g(1), // ID
+            g(2), // Tags
+            g(3), // OrigWords
+            g(4), // Occurrence
+            g(5), // TWLink
+            g(3), // GLQuote (copy of OrigWords)
+            g(4), // GLOccurrence (copy of Occurrence)
+            g(6), // Variant of
+            g(7), // Disambiguation
+          ].join('\t');
+          out.push(newRow);
+        }
+        matchedTsv = out.join('\n');
+      }
+    } catch (err) {
+      // leave matchedTsv unchanged on any transformation error
+    }
+  }
+
   const noMatchHeader = ['Reference', 'ID', 'Tags', 'OrigWords', 'Occurrence', 'TWLink', 'GLQuote', 'GLOccurrence', 'Disambiguation'];
   const noMatchTsv = [noMatchHeader.join('\t')].join('\n');
   return { matchedTsv, noMatchTsv };

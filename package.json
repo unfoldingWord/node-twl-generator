@@ -1,6 +1,6 @@
 {
   "name": "twl-generator",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "description": "Generate term-to-article lists from unfoldingWord en_tw archive for Bible books. Works in both Node.js (CLI) and React.js (browser) environments.",
   "main": "src/index.js",
   "bin": {
@@ -50,7 +50,7 @@
     "csv-parse": "^5.5.6",
     "csv-stringify": "^6.5.0",
     "jszip": "^3.10.1",
-    "tsv-quote-converters": "^1.1.13"
+    "tsv-quote-converters": "^1.1.14"
   },
   "peerDependencies": {
     "react": ">=16.8.0"
