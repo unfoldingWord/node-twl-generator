@@ -1,5 +1,6 @@
 import { BibleBookData } from './common/books.js';
 import { addGLQuoteCols, convertGLQuotes2OLQuotes } from 'tsv-quote-converters';
+import { Inflectors } from 'en-inflectors';
 
 const isBrowser = typeof window !== 'undefined';
 
@@ -865,32 +866,17 @@ export async function generateTwlByBook(bookCode, options = {}) {
 
   // Helpers for Variant of decision (allow only plural/-ed/-ing without marking variant)
   const pluralizeWord = (w) => {
-    if (/[^aeiou]y$/i.test(w)) return w.replace(/y$/i, 'ies');
-    if (/(s|x|z|ch|sh)$/i.test(w)) return w + 'es';
-    if (/f$/i.test(w) && !/(roof|belief|chief|proof)$/i.test(w)) return w.replace(/f$/i, 'ves');
-    if (/fe$/i.test(w)) return w.replace(/fe$/i, 'ves');
-    if (/o$/i.test(w)) return w + 'es';
-    return w + 's';
+    return new Inflectors(w).toPlural();
   };
-  const isVowel = (ch) => /[aeiou]/i.test(ch);
-  const isConsonant = (ch) => /[a-z]/i.test(ch) && !isVowel(ch);
-  const endsWithCVC = (w) => w.length >= 3 && isConsonant(w[w.length - 3]) && isVowel(w[w.length - 2]) && isConsonant(w[w.length - 1]) && !/[wxy]/i.test(w[w.length - 1]);
   const edForm = (w) => {
-    if (/e$/i.test(w)) return w + 'd';
-    if (/[^aeiou]y$/i.test(w)) return w.replace(/y$/i, 'ied');
-    // Do not double the final consonant for words ending in "er" (e.g., gather -> gathered)
-    const lastCh = w[w.length - 1];
-    if (endsWithCVC(w) && !/(?:er|en|or|on|al|el)$/i.test(w)) return w + lastCh + 'ed';
-    return w + 'ed';
+    return new Inflectors(w).toPast()
   };
   const ingForm = (w) => {
-    if (/ie$/i.test(w)) return w.replace(/ie$/i, 'ying');
-    if (/ee$/i.test(w)) return w + 'ing';
-    if (/e$/i.test(w)) return w.replace(/e$/i, 'ing');
-    const lastCh = w[w.length - 1];
-    if (endsWithCVC(w) && !/(?:er|en|or|on|al|el)$/i.test(w)) return w + lastCh + 'ing';
-    return w + 'ing';
+    return new Inflectors(w).toGerund()
   };
+  const singularForm = (w) => {
+    return new Inflectors(w).toSingular();
+  }
 
   const allowNoVariant = (base, match) => {
     const b = String(base || '');
@@ -904,6 +890,7 @@ export async function generateTwlByBook(bookCode, options = {}) {
       head + pluralizeWord(last),
       head + edForm(last),
       head + ingForm(last),
+      head + singularForm(last),
     ].map(x => x.toLowerCase()));
     return allowed.has(m.toLowerCase());
   };
