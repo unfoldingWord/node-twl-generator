@@ -866,17 +866,32 @@ export async function generateTwlByBook(bookCode, options = {}) {
 
   // Helpers for Variant of decision (allow only plural/-ed/-ing without marking variant)
   const pluralizeWord = (w) => {
-    return new Inflectors(w).toPlural();
+    if (/[^aeiou]y$/i.test(w)) return w.replace(/y$/i, 'ies');
+    if (/(s|x|z|ch|sh)$/i.test(w)) return w + 'es';
+    if (/f$/i.test(w) && !/(roof|belief|chief|proof)$/i.test(w)) return w.replace(/f$/i, 'ves');
+    if (/fe$/i.test(w)) return w.replace(/fe$/i, 'ves');
+    if (/o$/i.test(w)) return w + 'es';
+    return w + 's';
   };
+  const isVowel = (ch) => /[aeiou]/i.test(ch);
+  const isConsonant = (ch) => /[a-z]/i.test(ch) && !isVowel(ch);
+  const endsWithCVC = (w) => w.length >= 3 && isConsonant(w[w.length - 3]) && isVowel(w[w.length - 2]) && isConsonant(w[w.length - 1]) && !/[wxy]/i.test(w[w.length - 1]);
   const edForm = (w) => {
-    return new Inflectors(w).toPast()
+    if (/e$/i.test(w)) return w + 'd';
+    if (/[^aeiou]y$/i.test(w)) return w.replace(/y$/i, 'ied');
+    // Do not double the final consonant for words ending in "er" (e.g., gather -> gathered)
+    const lastCh = w[w.length - 1];
+    if (endsWithCVC(w) && !/(?:er|en|or|on|al)$/i.test(w)) return w + lastCh + 'ed';
+    return w + 'ed';
   };
   const ingForm = (w) => {
-    return new Inflectors(w).toGerund()
+    if (/ie$/i.test(w)) return w.replace(/ie$/i, 'ying');
+    if (/ee$/i.test(w)) return w + 'ing';
+    if (/e$/i.test(w)) return w.replace(/e$/i, 'ing');
+    const lastCh = w[w.length - 1];
+    if (endsWithCVC(w) && !/(?:er|en|or|on|al)$/i.test(w)) return w + lastCh + 'ing';
+    return w + 'ing';
   };
-  const singularForm = (w) => {
-    return new Inflectors(w).toSingular();
-  }
 
   const allowNoVariant = (base, match) => {
     const b = String(base || '');
@@ -888,9 +903,12 @@ export async function generateTwlByBook(bookCode, options = {}) {
     const last = parts[parts.length - 1];
     const allowed = new Set([
       head + pluralizeWord(last),
+      head + new Inflectors(last).toPlural(),
+      head + new Inflectors(last).toSingular(),
       head + edForm(last),
+      head + new Inflectors(last).toPast(),
       head + ingForm(last),
-      head + singularForm(last),
+      head + new Inflectors(last).toGerund(),
     ].map(x => x.toLowerCase()));
     return allowed.has(m.toLowerCase());
   };
