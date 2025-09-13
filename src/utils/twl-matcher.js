@@ -162,22 +162,8 @@ class PrefixTrie {
         // Always extract from the original text to preserve case
         let originalMatchedText = originalText.substring(startPos, currentPos);
 
-        // Extend match backwards to include dash-connected words and possessive forms
+        // Extend match backwards to include possessive forms (but not dash-connected words)
         let extendedStartPos = startPos;
-
-        // Check backwards for dash preceded by word characters (no space between)
-        if (extendedStartPos > 0 && originalText[extendedStartPos - 1] === '-') {
-          let dashPos = extendedStartPos - 1;
-          dashPos--; // Move before the dash
-          // Check if there are word characters immediately before the dash
-          if (dashPos >= 0 && /[\w]/.test(originalText[dashPos])) {
-            // Find the start of the word before the dash
-            while (dashPos >= 0 && /[\w]/.test(originalText[dashPos])) {
-              dashPos--;
-            }
-            extendedStartPos = dashPos + 1;
-          }
-        }
 
         // Check backwards for apostrophe (straight or curly) preceded by text
         if (extendedStartPos > 0 && /['']/.test(originalText[extendedStartPos - 1])) {
@@ -193,22 +179,8 @@ class PrefixTrie {
           }
         }
 
-        // Extend match forwards to include dash-connected words and possessive forms
+        // Extend match forwards to include possessive forms (but not dash-connected words)
         let extendedEndPos = currentPos;
-
-        // Check for dash followed by word characters (no space between)
-        if (extendedEndPos < originalText.length && originalText[extendedEndPos] === '-') {
-          let dashPos = extendedEndPos;
-          dashPos++; // Move past the dash
-          // Check if there are word characters immediately after the dash
-          if (dashPos < originalText.length && /[\w]/.test(originalText[dashPos])) {
-            // Find the end of the word after the dash
-            while (dashPos < originalText.length && /[\w]/.test(originalText[dashPos])) {
-              dashPos++;
-            }
-            extendedEndPos = dashPos;
-          }
-        }
 
         // Check for apostrophe (straight or curly) followed by text
         if (extendedEndPos < originalText.length && /['']/.test(originalText[extendedEndPos])) {
