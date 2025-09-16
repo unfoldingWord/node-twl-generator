@@ -43,12 +43,21 @@ async function processZipBuffer(zipBuffer) {
     for (const term of terms) {
       // Normalize terms by removing parentheses and spaces before them
       // e.g., "Joseph (OT)" -> "Joseph", "Mary (sister of Martha)" -> "Mary"
-      const normalizedTerm = term.replace(/\s+\([^)]*\)$/, '').trim();
+      let normalizedTerm = term.replace(/\s+\([^)]*\)$/, '').trim();
+      // Strip leading articles, demonstratives, and possessive pronouns (allow repeated prefixes)
+      const prefixRegex = /^(?:(?:a|an|the|this|that|these|those|my|your|his|her|its|our|their)\s+)+/i;
+      let cleaned = normalizedTerm.trim();
+      while (prefixRegex.test(cleaned)) {
+        cleaned = cleaned.replace(prefixRegex, '').trim();
+      }
+      normalizedTerm = cleaned;
 
       if (!termMap[normalizedTerm]) {
         termMap[normalizedTerm] = [];
       }
-      termMap[normalizedTerm].push(truncated);
+      if (!termMap[normalizedTerm].includes(truncated)) {
+        termMap[normalizedTerm].push(truncated);
+      }
     }
   }
 
