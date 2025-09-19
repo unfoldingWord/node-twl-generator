@@ -442,7 +442,7 @@ function findMatchingArticles(glq, articlesList, termMap, opts = {}) {
     let termHit = '';
     let truncated = false;
 
-    // Stage 1: case-sensitive, word-boundary
+    // Stage 1: case-insensitive, word-boundary (prioritized)
     if (stage === 0) {
       for (const tobj of terms) {
         const termOrig = tobj.orig;
@@ -451,28 +451,14 @@ function findMatchingArticles(glq, articlesList, termMap, opts = {}) {
         for (const a of irregularFormsForTerm(termOrig)) alts.add(a);
         for (const a of conjugationsForTerm(termOrig)) alts.add(a);
         for (const alt of alts) {
-          const re1 = new RegExp(`\\b${escapeRegExp(alt)}\\b`);
+          const re1 = new RegExp(`\\b${escapeRegExp(alt)}\\b`, 'i');
           if (re1.test(textOrig)) { stage = 1; termHit = termOrig; break; }
         }
         if (stage === 1) break;
       }
     }
-    // Stage 2: case-insensitive, word-boundary
-    if (stage === 0) {
-      for (const tobj of terms) {
-        const termOrig = tobj.orig;
-        const alts = new Set([termOrig]);
-        for (const a of pluralizeTerm(termOrig)) alts.add(a);
-        for (const a of irregularFormsForTerm(termOrig)) alts.add(a);
-        for (const a of conjugationsForTerm(termOrig)) alts.add(a);
-        for (const alt of alts) {
-          const re2 = new RegExp(`\\b${escapeRegExp(alt)}\\b`, 'i');
-          if (re2.test(textOrig)) { stage = 2; termHit = termOrig; break; }
-        }
-        if (stage === 2) break;
-      }
-    }
-    // Stage 3: case-sensitive, substring matching at word boundaries or after dashes
+
+    // Stage 2: case-insensitive, substring matching at word boundaries or after dashes
     if (stage === 0) {
       for (const tobj of terms) {
         const termOrig = tobj.orig;
@@ -480,12 +466,12 @@ function findMatchingArticles(glq, articlesList, termMap, opts = {}) {
           // Match if the term appears:
           // - At word boundary (beginning of word or after dash)
           // - Allow substring matching (e.g., "reap" matches "reapers")
-          const re3 = new RegExp(`(?:^|\\b|[—–-])${escapeRegExp(termOrig)}`, '');
-          if (re3.test(textOrig)) { stage = 3; termHit = termOrig; break; }
+          const re2 = new RegExp(`(?:^|\\b|[—–-])${escapeRegExp(termOrig)}`, 'i');
+          if (re2.test(textOrig)) { stage = 2; termHit = termOrig; break; }
         }
       }
     }
-    // Stage 4: case-insensitive, substring on derived stripped forms
+    // Stage 3: case-insensitive, substring on derived stripped forms
     if (stage === 0) {
       const strippedForms = (base) => {
         const { head, last } = splitHeadLast(base);
@@ -550,7 +536,7 @@ function findMatchingArticles(glq, articlesList, termMap, opts = {}) {
             // Only match if the stripped form is followed by a grammatical ending
             const regex = new RegExp(escapeRegExp(form) + '(ed|ing|er|est|es|ies|s|d|n|t)\\b', 'i');
             if (regex.test(textLower)) {
-              stage = 4;
+              stage = 3;
               termHit = termOrig;
               truncated = false;
               break outerStrip;
@@ -558,9 +544,9 @@ function findMatchingArticles(glq, articlesList, termMap, opts = {}) {
           } else {
             // For non-stripped forms, match at word boundaries or after dashes (case-insensitive)
             // Allow substring matching (e.g., "reap" matches "reapers")
-            const regex4 = new RegExp(`(?:^|\\b|[—–-])${escapeRegExp(form)}`, 'i');
-            if (regex4.test(textOrig)) {
-              stage = 4;
+            const regex3 = new RegExp(`(?:^|\\b|[—–-])${escapeRegExp(form)}`, 'i');
+            if (regex3.test(textOrig)) {
+              stage = 3;
               termHit = termOrig;
               truncated = false;
               break outerStrip;
@@ -930,7 +916,7 @@ export async function generateTwlByBook(bookCode, options = {}) {
 
         const ref = `${c}:${v}`;
         const id = genId();
-        const primaryArticle = (m.articles && m.articles[0]) || '';
+        const primaryArticle = m.preferredArticle || (m.articles && m.articles[0]) || '';
         let tag = '';
         if (primaryArticle.startsWith('kt/')) tag = 'keyterm';
         else if (primaryArticle.startsWith('names/')) tag = 'name';

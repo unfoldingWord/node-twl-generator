@@ -88,23 +88,19 @@ function generateVariants(term, isName = false) {
 }
 
 /**
- * Optimized PrefixTrie for fast term matching with case sensitivity
+ * Optimized PrefixTrie for fast term matching with case insensitivity
  */
 class PrefixTrie {
   constructor() {
-    this.exactCaseRoot = {}; // For exact case matches
-    this.lowerCaseRoot = {}; // For case-insensitive fallback
+    this.root = {}; // For case-insensitive matches
   }
 
   insert(term, originalTerm, articles, isOriginal = true) {
-    // Insert into exact case trie
-    this._insertIntoTree(this.exactCaseRoot, term, originalTerm, articles, isOriginal, true);
-
-    // // Also insert into lowercase trie for fallback - removed, too many falses
-    // this._insertIntoTree(this.lowerCaseRoot, term.toLowerCase(), originalTerm, articles, isOriginal, false);
+    // Insert into case-insensitive trie (always lowercase)
+    this._insertIntoTree(this.root, term.toLowerCase(), originalTerm, articles, isOriginal);
   }
 
-  _insertIntoTree(root, term, originalTerm, articles, isOriginal, isExactCase) {
+  _insertIntoTree(root, term, originalTerm, articles, isOriginal) {
     let node = root;
 
     for (const char of term) {
@@ -123,24 +119,16 @@ class PrefixTrie {
       term: originalTerm,
       articles,
       matchedText: term,
-      priority: isOriginal ? 0 : 1,
-      isExactCase
+      priority: isOriginal ? 0 : 1
     });
   }
 
   findMatches(text, startPos) {
-    // First try exact case matches
-    let matches = this._findMatchesInTree(this.exactCaseRoot, text, startPos, true, text);
-
-    // If no exact case matches, try case-insensitive
-    if (matches.length === 0) {
-      matches = this._findMatchesInTree(this.lowerCaseRoot, text.toLowerCase(), startPos, false, text);
-    }
-
-    return matches;
+    // Always use case-insensitive matching
+    return this._findMatchesInTree(this.root, text.toLowerCase(), startPos, text);
   }
 
-  _findMatchesInTree(root, searchText, startPos, isExactCase, originalText) {
+  _findMatchesInTree(root, searchText, startPos, originalText) {
     const matches = [];
     let node = root;
     let currentPos = startPos;
@@ -223,25 +211,20 @@ class PrefixTrie {
               matchedText: originalMatchedText, // Use the extended matched text
               length: originalMatchedText.length, // Use extended length
               originalLength: matchLength, // Keep track of original match length for advancement
-              priority: termData.priority,
-              isExactCase: isExactCase
+              priority: termData.priority
             });
           }
         }
       }
     }
 
-    // Sort by length (longer first), then by priority, then by case match preference
+    // Sort by length (longer first), then by priority
     return matches.sort((a, b) => {
       if (b.length !== a.length) {
         return b.length - a.length;
       }
       if (a.priority !== b.priority) {
         return a.priority - b.priority;
-      }
-      // Prefer exact case matches
-      if (a.isExactCase !== b.isExactCase) {
-        return a.isExactCase ? -1 : 1;
       }
       return 0;
     });
@@ -308,8 +291,37 @@ function findMatches(verseText, termTrie) {
     let bestMatch = null;
 
     // Pick the best match (longest, then by priority)
+    // But collect all articles from matches of the same length and priority
     if (candidateMatches.length > 0) {
       bestMatch = candidateMatches[0];
+
+      // Collect all articles from matches with the same length and priority as the best match
+      const allArticles = new Set();
+      for (const match of candidateMatches) {
+        if (match.length === bestMatch.length && match.priority === bestMatch.priority) {
+          match.articles.forEach(article => allArticles.add(article));
+        }
+      }
+      bestMatch.articles = Array.from(allArticles);
+
+      // Special case for "god" - prefer the appropriate article based on capitalization
+      // but keep all articles for disambiguation
+      if (bestMatch.matchedText.toLowerCase() === 'god' && bestMatch.articles.length > 1) {
+        const originalMatchedText = normalizedText.substring(currentPos, currentPos + bestMatch.length);
+        const hasGodArticle = bestMatch.articles.includes('kt/god');
+        const hasFalseGodArticle = bestMatch.articles.includes('kt/falsegod');
+
+        if (hasGodArticle && hasFalseGodArticle) {
+          // Check capitalization in original text
+          if (originalMatchedText === 'God' || originalMatchedText.charAt(0) === 'G') {
+            // Prefer kt/god for capitalized "God"
+            bestMatch.preferredArticle = 'kt/god';
+          } else {
+            // Prefer kt/falsegod for lowercase "god"
+            bestMatch.preferredArticle = 'kt/falsegod';
+          }
+        }
+      }
     }
 
     if (bestMatch) {
@@ -320,6 +332,7 @@ function findMatches(verseText, termTrie) {
       matches.push({
         term: bestMatch.term,
         articles: bestMatch.articles,
+        preferredArticle: bestMatch.preferredArticle,
         matchedText: matchedText,
         context: context,
         priority: bestMatch.priority
