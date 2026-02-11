@@ -17,8 +17,14 @@ function decodeBase64(base64String) {
   if (isNode) {
     return Buffer.from(base64String, 'base64').toString('utf-8');
   }
-  // Browser implementation
-  return atob(base64String);
+  // Browser implementation - properly handle UTF-8 characters (e.g., smart quotes)
+  const binaryString = atob(base64String);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  const decoder = new TextDecoder('utf-8');
+  return decoder.decode(bytes);
 }
 
 // Note: This version doesn't use usfm-js to avoid external dependencies
