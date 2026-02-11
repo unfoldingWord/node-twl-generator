@@ -1,6 +1,7 @@
 /* eslint-disable no-async-promise-executor, no-throw-literal */
 
 import { BibleBookData } from '../common/books.js';
+import { removeAlignments } from 'usfm-alignment-remover';
 
 // Environment detection
 const isNode = typeof window === 'undefined' && typeof process !== 'undefined' && process.versions?.node;
@@ -26,16 +27,7 @@ function decodeBase64(base64String) {
 export const removeAllTagsExceptChapterVerse = (usfmContent) => {
   if (!usfmContent) return '';
 
-  let cleanContent = usfmContent;
-
-  // Remove word-level alignment markers like \w word|lemma="lemma" strong="H1234"\w*
-  cleanContent = cleanContent.replace(/\\w\s+([^|\\]+)\|[^\\]*\\w\*/g, '$1');
-
-  // Remove milestone markers like \zaln-s | \zaln-e\*
-  cleanContent = cleanContent.replace(/\\zaln-[se][^\\]*\\?\*?/g, '');
-
-  // Remove other alignment-related markers
-  cleanContent = cleanContent.replace(/\\k-[se][^\\]*\\?\*?/g, '');
+  let cleanContent = removeAlignments(usfmContent);
 
   // Remove empty lines that might result from marker removal
   cleanContent = cleanContent.replace(/\n\s*\n\s*\n/g, '\n\n');
