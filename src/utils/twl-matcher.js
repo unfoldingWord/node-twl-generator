@@ -194,11 +194,11 @@ class PrefixTrie {
 
         // Check if this is a valid word boundary match (both start and end)
         const isStartBoundary = extendedStartPos === 0 ||
-          /[\s\p{P}]/.test(originalText[extendedStartPos - 1]) ||
+          /[\s\p{P}]/u.test(originalText[extendedStartPos - 1]) ||
           !/[\w]/.test(originalText[extendedStartPos - 1]);
 
         const isEndBoundary = extendedEndPos >= originalText.length ||
-          /[\s\p{P}]/.test(originalText[extendedEndPos]) ||
+          /[\s\p{P}]/u.test(originalText[extendedEndPos]) ||
           !/[\w]/.test(originalText[extendedEndPos]);
 
         const isWordBoundary = isStartBoundary && isEndBoundary;
