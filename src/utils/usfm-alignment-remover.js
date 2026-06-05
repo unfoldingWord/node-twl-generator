@@ -45,7 +45,9 @@ export const removeAllTagsExceptChapterVerse = (usfmContent) => {
   cleanContent = cleanContent.replace(/ +\\v +/g, '\n\\v ');
   cleanContent = cleanContent.replace(/ +\\c +/g, '\n\\c ');
   cleanContent = cleanContent.replace(/ *(\\q\d*|\\p|\\ts\\\*) */g, ' ');
-  cleanContent = cleanContent.replace(/\\[ds].*?(\\|\n)/g, '$1');
+  // Strip section headings (\s, \s1, \sr, \sp, etc.) but preserve \d (chapter
+  // descriptions / psalm superscriptions) so front-matter TWLs can be generated.
+  cleanContent = cleanContent.replace(/\\s.*?(\\|\n)/g, '$1');
   cleanContent = cleanContent.replace(/ +/g, ' ');
   cleanContent = cleanContent.replace(/^ +$/g, '');
   cleanContent = cleanContent.replace(/\\f .*?\\f\*/g, ' ');
@@ -106,6 +108,16 @@ export function parseUsfmToVerses(usfm) {
       currentChapter = number;
       if (!versesObj[currentChapter]) {
         versesObj[currentChapter] = {};
+      }
+      // Capture chapter front matter (\d description / psalm superscription) so it
+      // can produce `<chapter>:front` TWL rows. Other pre-verse markers (\s, \q, \p)
+      // have already been stripped, leaving the \d text in the chapter head.
+      const frontMatch = text.match(/\\d\s+([^\\]*)/);
+      if (frontMatch) {
+        const frontText = frontMatch[1].replace(/\s+/g, ' ').trim();
+        if (frontText) {
+          versesObj[currentChapter].front = frontText;
+        }
       }
     } else if (tag === 'v') {
       if (!versesObj[currentChapter]) {

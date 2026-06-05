@@ -903,8 +903,10 @@ export async function generateTwlByBook(bookCode, options = {}) {
   const chapterNums = Object.keys(versesByChapter).map(n => parseInt(n, 10)).sort((a, b) => a - b);
   for (const c of chapterNums) {
     const verses = versesByChapter[c] || {};
-    const verseNums = Object.keys(verses).map(n => parseInt(n, 10)).sort((a, b) => a - b);
-    for (const v of verseNums) {
+    const verseNums = Object.keys(verses).filter(k => k !== 'front').map(n => parseInt(n, 10)).sort((a, b) => a - b);
+    // Chapter front matter (\d) is emitted as `${c}:front`, ordered before verse 1.
+    const orderedKeys = verses.front ? ['front', ...verseNums] : verseNums;
+    for (const v of orderedKeys) {
       const text = verses[v] || '';
       const matches = scanVerseMatches(text, trie);
       // Count occurrences per exact matchedText (case-sensitive)
