@@ -1,6 +1,6 @@
 # TWL Generator
 
-A Node.js library and CLI tool for generating Translation Word Links (TWL) TSV files from Door43 USFM data and Translation Words (TW) metadata. This tool intelligently matches biblical terms with their corresponding Translation Words articles using Strong's numbers, morphological analysis, and contextual matching.
+A Node.js library and CLI tool for generating Translation Word Links (TWL) TSV files from Door43 (DCS) data. For a given Bible book it downloads the unfoldingWord Literal Text (en_ult) and the Translation Words (en_tw) articles, then scans the English text for the headword terms (and their morphological variants) defined by each TW article, linking every match back to its article. Works in both Node.js (CLI) and browser/React environments.
 
 ## Installation
 
@@ -20,166 +20,128 @@ npm install twl-generator
 
 Generate TWL for a specific book:
 ```bash
-twl-generator --book rut
-# Creates: rut.twl.tsv and rut.no-match.twl.tsv
+twl-generator --book rut --out rut.twl.tsv
+# Writes: rut.twl.tsv and rut.no-match.twl.tsv
 ```
 
-Generate TWL for all books:
+Generate TWL for all 66 books into a directory:
 ```bash
 twl-generator --all --out-dir ./output
-# Creates TWL files for all 66 biblical books
 ```
 
-Specify custom output location:
+Write a single book into a directory (filename derived from the book code):
 ```bash
-twl-generator --book mat --out matthew.twl.tsv
+twl-generator --book mat --out-dir ./output
 ```
 
-Enable advanced verb conjugation matching:
+Use a different DCS host:
 ```bash
-twl-generator --book jhn --use-compromise
-# Uses compromise.js for better verb form detection
+twl-generator --book rut --dcs https://qa.door43.org
 ```
+
+If neither `--out` nor `--out-dir` is given, the matched TSV is written to stdout.
 
 #### CLI Options
-- `--book <code>`: Book code (e.g., gen, exo, mat, mrk, jhn, etc.)
-- `--all`: Generate TWL files for all biblical books
-- `--out <file>`: Specify output file path
-- `--out-dir <dir>`: Output directory (for --all option)
-- `--use-compromise`: Enable advanced morphological analysis using compromise.js
+- `--book <code>` / `-b`: Book code (e.g. `gen`, `exo`, `mat`, `jhn`). Pass `all` here as an alternative to `--all`.
+- `--all` / `-A`: Generate TWL files for all biblical books.
+- `--out <file>` / `-o`: Output file path (a matching `*.no-match.twl.tsv` is written alongside it).
+- `--out-dir <dir>` / `-O`: Output directory; files are named `<code>.twl.tsv`.
+- `--dcs <host>`: DCS base host. Default: `https://git.door43.org`.
+- `--use-compromise`: Accepted for backwards compatibility but currently has no effect (see [How It Works](#how-it-works)).
 
 ### Library Usage
 
-#### Basic Usage
+The package exports a single function, `generateTwlByBook`:
+
 ```javascript
 import { generateTwlByBook } from 'twl-generator';
 
-// Generate TWL for Ruth
-const result = await generateTwlByBook('rut');
-console.log(result.matchedTsv);    // Main TWL output
-console.log(result.noMatchTsv);    // Unmatched entries for analysis
+const { matchedTsv, noMatchTsv } = await generateTwlByBook('rut');
+console.log(matchedTsv);   // Main TWL output (TSV string)
 ```
 
-#### With Advanced Options
-```javascript
-import { generateTwlByBook } from 'twl-generator';
+#### Options
 
-// Use advanced morphological analysis
-const result = await generateTwlByBook('jhn', { 
-  useCompromise: true  // Enable compromise.js for better verb matching
+```javascript
+const result = await generateTwlByBook('jhn', {
+  dcsHost: 'https://git.door43.org', // DCS host to fetch en_ult and en_tw from
+  quiet: true,                        // suppress logging from tsv-quote-converters
 });
-
-// Save to files
-import fs from 'fs/promises';
-await fs.writeFile('john.twl.tsv', result.matchedTsv);
-await fs.writeFile('john.no-match.tsv', result.noMatchTsv);
 ```
 
-#### Integration Example
+#### Saving to files
+
 ```javascript
+import fs from 'fs/promises';
 import { generateTwlByBook } from 'twl-generator';
 
-async function processBibleBook(bookCode) {
-  try {
-    const { matchedTsv, noMatchTsv } = await generateTwlByBook(bookCode);
-    
-    // Process the TSV data
-    const lines = matchedTsv.split('\n');
-    const header = lines[0];
-    const rows = lines.slice(1).filter(Boolean);
-    
-    console.log(`Generated ${rows.length} TWL entries for ${bookCode.toUpperCase()}`);
-    
-    // Further processing...
-    return { success: true, entries: rows.length };
-  } catch (error) {
-    console.error(`Failed to process ${bookCode}:`, error);
-    return { success: false, error: error.message };
-  }
-}
+const { matchedTsv } = await generateTwlByBook('jhn');
+await fs.writeFile('jhn.twl.tsv', matchedTsv);
 ```
 
 ## How It Works
 
-The TWL Generator uses a sophisticated multi-stage process to create Translation Word Links:
+The generator is **English-first**: rather than starting from original-language Strong's numbers, it matches the headword terms of each Translation Words article directly against the English ULT text.
 
-### 1. **Data Sources**
-- **Original Language USFM**: Hebrew (hbo_uhb) and Greek (el-x-koine_ugnt) texts from Door43
-- **English Bible**: unfoldingWord Literal Text (en_ult) for context matching  
-- **Translation Words**: Local `tw_strongs_list.json` containing Strong's mappings and term definitions
-- **Strong's Numbers**: Links between original language words and semantic concepts
+> **Note:** Earlier versions matched via Strong's numbers. That approach has been removed from the active code path — generation no longer reads any Strong's data. (Some unused Strong's-era helper functions still linger in `src/index.js` and a `--use-compromise` flag is still accepted, but neither affects output.)
 
-### 2. **Processing Pipeline**
+### 1. Data Sources (all fetched live from DCS)
+- **Translation Words** (`unfoldingWord/en_tw`): the article archive. The first heading line (`# ...`) of each `bible/**/*.md` article lists that article's terms.
+- **English Bible** (`unfoldingWord/en_ult`): the unfoldingWord Literal Text USFM for the requested book.
 
-#### Stage 1: Extract Strong's Data
-- Parses USFM `\w` tags to extract Strong's numbers from original language texts
-- Builds initial TSV with Reference, Strong's ID, and surface words
-- Handles multi-word phrases that share Strong's number sequences
+Nothing is cached or vendored locally; a network connection to the DCS host is required for every run.
 
-#### Stage 2: Generate English Context
-- Uses `tsv-quote-converters` to find corresponding English text (GLQuote) in ULT
-- Adds GLQuote and GLOccurrence columns for contextual matching
-- Converts to OrigWords/Occurrence format for processing
+### 2. Processing Pipeline
 
-#### Stage 3: Intelligent Article Selection  
-For each Strong's number and its English context, the system:
+#### Stage 1: Build the term → article map
+The `en_tw` archive is downloaded and unzipped in memory. For each article, the terms in its heading line are normalized and mapped to the article path (e.g. `kt/grace`, `names/ruth`, `other/reap`):
+- Trailing parentheticals are stripped: `Joseph (OT)` → `Joseph`.
+- Leading articles, demonstratives, and possessives are removed: `the temple` → `temple`.
 
-1. **Prioritizes candidate articles** based on:
-   - Articles whose slug appears in the GLQuote text
-   - Article type preference: kt/ (key terms) → names/ → other/
-   - Alphabetical sorting within each category
+A single term may map to multiple articles (used later for disambiguation).
 
-2. **Performs 4-stage matching** (best match wins):
-   - **Stage 1**: Case-sensitive word boundary matching
-   - **Stage 2**: Case-insensitive word boundary matching  
-   - **Stage 3**: Case-sensitive substring matching
-   - **Stage 4**: Case-insensitive morphological variants
+#### Stage 2: Build a matching trie with morphological variants
+Terms are inserted into a case-insensitive prefix trie. Each **single-word** term is expanded into morphological variants so inflected forms in the text still match:
+- Pluralization (`dog` → `dogs`, `city` → `cities`, `church` → `churches`)
+- Regular and doubled-consonant verb forms (`stop` → `stopped`/`stopping`, `love` → `loved`/`loving`)
 
-3. **Morphological analysis** includes:
-   - Pluralization (dog → dogs, man → men)
-   - Verb conjugation (-ing, -ed forms)
-   - Irregular verb forms (go → went, see → saw)
-   - Optional advanced analysis with compromise.js
+Multi-word terms are inserted as-is (not expanded) to avoid combinatorial blow-up.
 
-#### Stage 4: Quality Assurance
-- Generates disambiguation info when multiple articles could match
-- Marks entries as "Variant of" when morphological variants are used
-- Creates separate files for matched and unmatched entries
-- Provides detailed statistics and sample unmatched entries
+#### Stage 3: Fetch and clean the ULT text
+The book's en_ult USFM is downloaded, word-alignment markup and most USFM markers are removed, and the result is parsed into chapters and verses. Chapter front matter (`\d` superscriptions, e.g. in Psalms) is preserved and emitted as a `<chapter>:front` reference.
 
-### 3. **Output Format**
+Supplied words/morphemes the ULT wraps in curly braces (e.g. `creature{s}`) are kept. The matcher sees through the braces (so `creature{s}` matches the term `creatures`) but retains them in the output `OrigWords`, which is what the quote aligner needs.
+
+#### Stage 4: Scan each verse
+Each verse is walked left to right; at every position the longest, highest-priority trie match wins. Occurrences are counted per exact matched text within the verse. For the term **god**, capitalization disambiguates `kt/god` (capital "God") from `kt/falsegod` (lowercase "god").
+
+#### Stage 5: Align quotes and finalize columns
+The matched English spans are run through [`tsv-quote-converters`](https://www.npmjs.com/package/tsv-quote-converters) to align them back to the original-language quotes and to populate the `GLQuote`/`GLOccurrence` columns. These calls degrade gracefully: if the network is unavailable, the generator falls back to the unaligned output rather than failing.
+
+### 3. Output Format
 
 The generated TSV contains these columns:
 
 | Column | Description |
 |--------|-------------|
-| Reference | Chapter:verse (e.g., "1:1") |
-| ID | Random 4-character ID starting with letter |
-| Tags | "keyterm", "name", or empty based on article type |
-| OrigWords | The matched word(s) from the text |
+| Reference | Chapter:verse (e.g. `1:1`), or `<chapter>:front` for chapter front matter |
+| ID | Random 4-character ID starting with a letter |
+| Tags | `keyterm`, `name`, or empty, based on the article category (`kt/`, `names/`, other) |
+| OrigWords | The original-language word(s) for the match |
 | Occurrence | Which occurrence of this word in the verse |
-| TWLink | Link to Translation Words article (rc://*/tw/dict/bible/...) |
-| GLQuote | English text context from ULT |  
-| GLOccurrence | Occurrence number in English context |
-| Strongs | Original Strong's number |
-| Variant of | Original term if morphological variant was used |
-| Disambiguation | List of other possible articles |
+| TWLink | Link to the Translation Words article (`rc://*/tw/dict/bible/...`) |
+| GLQuote | The matched English text from the ULT |
+| GLOccurrence | Occurrence number in the English text |
+| Variant of | The article's term, set only when the match differs by more than a simple plural/`-ed`/`-ing` inflection |
+| Disambiguation | Other candidate articles when the matched term maps to more than one |
 
-### 4. **Matching Examples**
-
-```
-Reference   OrigWords   GLQuote              TWLink                      Variant of
-1:17        grace       grace and truth      rc://*/tw/dict/bible/kt/grace
-1:17        gracious    gracious God         rc://*/tw/dict/bible/kt/grace   grace
-2:3         men         wise men came        rc://*/tw/dict/bible/other/man
-2:3         wisdom      with great wisdom    rc://*/tw/dict/bible/kt/wise    wise
-```
+A companion `*.no-match.twl.tsv` file is also produced. (It currently contains only a header row; unmatched-entry reporting is a planned enhancement.)
 
 ## Development
 
 ### Prerequisites
-- Node.js 18+ (uses native fetch)
-- Git access to Door43 repositories
+- Node.js 18+ (uses native `fetch`)
+- Network access to a DCS host (default `https://git.door43.org`)
 
 ### Setup
 ```bash
@@ -188,112 +150,49 @@ cd node-twl-generator
 npm install
 ```
 
-### Testing
+### Running locally
 ```bash
-# Test single book generation
-npm test
+# Generate a small book and inspect the output
+node src/cli.js --book rut --out rut.twl.tsv
 
-# Test specific book
-npm run cli -- --book rut
-
-# Test with advanced morphology
-npm run cli -- --book jhn --use-compromise
+# Library smoke test
+node -e "import('./src/index.js').then(m => m.generateTwlByBook('rut').then(r => console.log(r.matchedTsv)))"
 ```
 
-### Local Development
-```bash
-# Run CLI locally
-node src/cli.js --book gen --out test-output.tsv
-
-# Test library integration
-node -e "import('./src/index.js').then(m => m.generateTwlByBook('rut').then(console.log))"
-```
+There is no separate test framework, linter, or build step. `npm test` simply runs the CLI on Ruth. Verify changes by regenerating a book and diffing the resulting TSV — `rut` (Ruth) and `phm` (Philemon) are the quickest to iterate on.
 
 ### Project Structure
 ```
 src/
-├── cli.js                    # Command line interface
-├── index.js                  # Main library exports
+├── cli.js                          # Command line interface (the bin entry point)
+├── index.js                        # Library export: generateTwlByBook (the orchestrator)
 ├── common/
-│   └── books.js             # Bible book metadata
+│   └── books.js                    # BibleBookData: book code -> { usfm, testament, chapters, ... }
 └── utils/
-    ├── twl-matcher.js       # Term matching algorithms (legacy)
-    ├── zipProcessor.js      # TW archive processing (legacy)
-    └── usfm-alignment-remover.js  # USFM parsing (legacy)
-tw_strongs_list.json         # Translation Words database
-```
-
-## Data Files
-
-### `tw_strongs_list.json`
-This file contains the core mapping between Strong's numbers and Translation Words articles:
-
-```json
-{
-  "kt/god": {
-    "article": {
-      "terms": ["God", "god", "deity", "divine"]
-    },
-    "strongs": [
-      ["H430"],     // Single Strong's number
-      ["H410"],
-      ["G2316", "G2318"]  // Multiple Strong's for compound concepts
-    ]
-  }
-}
-```
-
-## Contributing
-
-We welcome contributions! Here's how you can help:
-
-### Reporting Issues
-- **Missing matches**: If legitimate biblical terms aren't being matched
-- **False positives**: If non-terms are being incorrectly matched  
-- **Performance issues**: Slow processing or memory problems
-- **Data quality**: Incorrect Strong's mappings or term definitions
-
-### Enhancement Ideas
-- **Better morphological analysis**: Improve verb conjugation and irregular forms
-- **Multi-language support**: Extend beyond English GLQuotes
-- **Contextual disambiguation**: Use surrounding words for better article selection
-- **Performance optimization**: Faster processing for large corpora
-
-### Development Workflow
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature-name`
-3. Make your changes with tests
-4. Run the test suite: `npm test`
-5. Submit a pull request with detailed description
-
-### Testing Your Changes
-```bash
-# Test various scenarios
-npm run cli -- --book psa --use-compromise  # Large book with advanced features
-npm run cli -- --book phm                   # Short book for quick testing
-npm run cli -- --book rev                   # Symbolic language testing
+    ├── zipProcessor.js             # Downloads en_tw, builds the term -> article map
+    ├── twl-matcher.js              # Prefix trie + morphological variants + verse scanning
+    └── usfm-alignment-remover.js   # Fetches en_ult, strips alignment markup, parses verses
 ```
 
 ## Browser Compatibility
 
-While primarily designed for Node.js, core functionality works in modern browsers:
+The core functionality is designed to run in modern browsers as well as Node.js (it relies only on `fetch` and `JSZip`):
 
 ```javascript
-// React/Browser usage example
 import { generateTwlByBook } from 'twl-generator';
 
 const MyComponent = () => {
   const [tsvData, setTsvData] = useState(null);
-  
+
   const generateTWL = async () => {
     try {
-      const result = await generateTwlByBook('mat');
-      setTsvData(result.matchedTsv);
+      const { matchedTsv } = await generateTwlByBook('mat');
+      setTsvData(matchedTsv);
     } catch (error) {
       console.error('TWL generation failed:', error);
     }
   };
-  
+
   return (
     <div>
       <button onClick={generateTWL}>Generate TWL for Matthew</button>
@@ -305,13 +204,21 @@ const MyComponent = () => {
 
 ## Performance
 
-Typical processing times:
-- **Short books** (Philemon, 2-3 John): < 5 seconds
-- **Medium books** (Ruth, Ephesians): 5-15 seconds  
-- **Large books** (Psalms, Matthew): 30-60 seconds
-- **All books**: 15-30 minutes depending on network speed
+Processing time is dominated by downloading the `en_tw` archive and the book's USFM, plus the quote-alignment step. Short books (Philemon, Ruth) complete in a handful of seconds; large books (Psalms, Matthew) take longer. Times vary mostly with network speed.
 
-Memory usage scales with book size, typically 50-200MB peak.
+## Contributing
+
+We welcome contributions! Particularly useful:
+- **Missing matches**: legitimate biblical terms that aren't being matched.
+- **False positives**: non-terms being incorrectly matched.
+- **Better morphological variants**: improving `generateVariants` in `src/utils/twl-matcher.js`.
+- **Unmatched reporting**: populating the currently header-only `*.no-match.twl.tsv` output.
+
+### Workflow
+1. Fork the repository and create a feature branch.
+2. Make your changes.
+3. Regenerate a book or two and diff the TSV to confirm the effect.
+4. Submit a pull request with a clear description.
 
 ## License
 
@@ -320,11 +227,10 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ## Support
 
 - **Issues**: https://github.com/unfoldingWord/node-twl-generator/issues
-- **Discussions**: https://github.com/unfoldingWord/node-twl-generator/discussions  
-- **Documentation**: https://github.com/unfoldingWord/node-twl-generator/wiki
+- **Discussions**: https://github.com/unfoldingWord/node-twl-generator/discussions
 
 ## Related Projects
 
-- [tsv-quote-converters](https://www.npmjs.com/package/tsv-quote-converters) - GLQuote generation
-- [compromise](https://www.npmjs.com/package/compromise) - Advanced morphological analysis
+- [tsv-quote-converters](https://www.npmjs.com/package/tsv-quote-converters) - GLQuote/original-language quote alignment
+- [usfm-alignment-remover](https://www.npmjs.com/package/usfm-alignment-remover) - USFM alignment stripping
 - [Door43 Content](https://git.door43.org/unfoldingWord) - Source biblical texts and resources
