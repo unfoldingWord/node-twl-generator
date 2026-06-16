@@ -9,10 +9,6 @@
  */
 import JSZip from "jszip";
 
-// Environment detection
-const isNode = typeof process !== 'undefined' && process.versions?.node;
-const isBrowser = typeof window !== 'undefined';
-
 /**
  * Process ZIP buffer and extract term mappings
  */
@@ -86,15 +82,4 @@ export async function generateTWTerms(dcsHost = 'https://git.door43.org') {
   console.log(`Generated ${Object.keys(termMap).length} terms from TW archive`);
 
   return termMap;
-}
-
-/**
- * Get information about the current environment for debugging
- */
-export function getEnvironmentInfo() {
-  return {
-    environment: isNode ? 'Node.js' : (isBrowser ? 'Browser' : 'Unknown'),
-    hasFetch: typeof fetch !== 'undefined',
-    hasJSZip: typeof JSZip !== 'undefined'
-  };
 }
