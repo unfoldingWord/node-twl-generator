@@ -924,8 +924,10 @@ export async function generateTwlByBook(bookCode, options = {}) {
         else if (primaryArticle.startsWith('names/')) tag = 'name';
         const twLink = primaryArticle ? `rc://*/tw/dict/bible/${primaryArticle}` : '';
 
-        // Variant of: only if beyond plural/-ed/-ing differences
-        const variantOf = allowNoVariant(m.term, glq) ? '' : m.term;
+        // Variant of: only if beyond plural/-ed/-ing differences. Compare on the
+        // brace-free reading so a supplied-morpheme brace (e.g. "creature{s}")
+        // isn't itself counted as a difference from the term.
+        const variantOf = allowNoVariant(m.term, glq.replace(/[{}]/g, '')) ? '' : m.term;
         // Disambiguation: list all candidate articles for this match
         const disamb = (m.articles && m.articles.length > 1) ? `(${m.articles.join(', ')})` : '';
 

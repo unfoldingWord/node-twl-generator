@@ -137,6 +137,15 @@ class PrefixTrie {
     while (currentPos < searchText.length) {
       const char = searchText[currentPos];
 
+      // Curly braces wrap "supplied" words/morphemes in the ULT (e.g.
+      // "creature{s}"). Match through them transparently (they never appear in
+      // a trie term) so "creature{s}" matches the term "creatures"; the braces
+      // are re-included when the matched span is extracted below.
+      if ((char === '{' || char === '}') && currentPos > startPos) {
+        currentPos++;
+        continue;
+      }
+
       if (!node[char]) {
         break; // No more matches possible
       }
@@ -192,14 +201,42 @@ class PrefixTrie {
           originalMatchedText = originalText.substring(extendedStartPos, extendedEndPos);
         }
 
-        // Check if this is a valid word boundary match (both start and end)
-        const isStartBoundary = extendedStartPos === 0 ||
-          /[\s\p{P}]/u.test(originalText[extendedStartPos - 1]) ||
-          !/[\w]/.test(originalText[extendedStartPos - 1]);
+        // Balance curly braces so a brace split across the match boundary keeps
+        // its partner. Matching "creature{s}" through the brace stops the span
+        // at "creature{s" (open '{' with no '}'); pull in the trailing '}' so
+        // OrigWords becomes "creature{s}". Symmetric for a leading '{'.
+        let open = 0, close = 0;
+        for (const ch of originalText.substring(extendedStartPos, extendedEndPos)) {
+          if (ch === '{') open++;
+          else if (ch === '}') close++;
+        }
+        while (open > close && extendedEndPos < originalText.length && originalText[extendedEndPos] === '}') {
+          extendedEndPos++; close++;
+        }
+        while (close > open && extendedStartPos > 0 && originalText[extendedStartPos - 1] === '{') {
+          extendedStartPos--; open++;
+        }
+        if (extendedStartPos < startPos || extendedEndPos > currentPos) {
+          originalMatchedText = originalText.substring(extendedStartPos, extendedEndPos);
+        }
 
-        const isEndBoundary = extendedEndPos >= originalText.length ||
-          /[\s\p{P}]/u.test(originalText[extendedEndPos]) ||
-          !/[\w]/.test(originalText[extendedEndPos]);
+        // Check if this is a valid word boundary match (both start and end).
+        // Skip past any braces when locating the neighbouring character so a
+        // supplied-word brace does not act as a false word boundary: the
+        // brace-free reading ("creatures") must be treated as one word, so a
+        // bare "creature" before the "{s}" is correctly rejected.
+        let beforePos = extendedStartPos - 1;
+        while (beforePos >= 0 && (originalText[beforePos] === '{' || originalText[beforePos] === '}')) beforePos--;
+        let afterPos = extendedEndPos;
+        while (afterPos < originalText.length && (originalText[afterPos] === '{' || originalText[afterPos] === '}')) afterPos++;
+
+        const isStartBoundary = beforePos < 0 ||
+          /[\s\p{P}]/u.test(originalText[beforePos]) ||
+          !/[\w]/.test(originalText[beforePos]);
+
+        const isEndBoundary = afterPos >= originalText.length ||
+          /[\s\p{P}]/u.test(originalText[afterPos]) ||
+          !/[\w]/.test(originalText[afterPos]);
 
         const isWordBoundary = isStartBoundary && isEndBoundary;
 

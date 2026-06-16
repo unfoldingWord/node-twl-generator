@@ -51,7 +51,12 @@ export const removeAllTagsExceptChapterVerse = (usfmContent) => {
   cleanContent = cleanContent.replace(/ +/g, ' ');
   cleanContent = cleanContent.replace(/^ +$/g, '');
   cleanContent = cleanContent.replace(/\\f .*?\\f\*/g, ' ');
-  cleanContent = cleanContent.replace(/[\{\}]/g, ''); // Remove any curly braces
+  // NOTE: Curly braces ({ }) wrap "supplied" words/morphemes in the ULT (e.g.
+  // "creature{s}") that the matcher must see through but must NOT discard. They
+  // are preserved here so the matcher can match the brace-free reading
+  // ("creatures") yet retain the braces in OrigWords ("creature{s}"), which is
+  // what tsv-quote-converters needs to align the quote back to the original
+  // language. Brace-transparency lives in twl-matcher.js (findMatches).
 
   // Remove all lines before the first \c marker, keeping the \c line
   const lines = cleanContent.split('\n');
